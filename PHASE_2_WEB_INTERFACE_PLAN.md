@@ -195,7 +195,10 @@ huckleberry-web-portal/
 - [ ] Set up Supabase Storage bucket for images
 - [ ] Build ImageUploader component with drag-and-drop
 - [ ] Implement client-side image compression
-- [ ] API route: POST upload image
+- [ ] API route: POST upload image with validation
+- [ ] **Enforce 25 image limit per session (students/instructors only)**
+- [ ] Display image counter: "12/25 images uploaded"
+- [ ] Disable upload button when limit reached (non-admins)
 - [ ] Link images to session notes
 - [ ] Display uploaded images in gallery
 
@@ -309,10 +312,11 @@ huckleberry-web-portal/
 │  🔗 Resources:                          │
 │  • Tutorial: Rule of Thirds            │
 │                                         │
-│  🖼️ Images (3):                        │
+│  🖼️ Images (3/25):                     │
 │  ┌─────┐ ┌─────┐ ┌─────┐              │
 │  │ IMG │ │ IMG │ │ IMG │ [+ Upload]   │
 │  └─────┘ └─────┘ └─────┘              │
+│  💡 22 images remaining in this session│
 │                                         │
 └─────────────────────────────────────────┘
 ```
@@ -354,12 +358,17 @@ huckleberry-web-portal/
 ### **File Upload**
 - File type validation (only images: jpg, png, webp)
 - File size limit (10MB max before compression)
+- **Per-session image limit: 25 images for students/instructors, unlimited for admins**
 - Malware scanning (optional: ClamAV or VirusTotal API)
 - Unique filenames (UUIDs) to prevent collisions
 
 ### **Rate Limiting**
-- Limit uploads per user (e.g., 50 images/day)
+- **Image limits per session:**
+  - Students: 25 images max per session
+  - Instructors: 25 images max per session
+  - Admins: Unlimited
 - API rate limiting (Vercel handles this)
+- Display counter in UI: "12/25 images uploaded"
 
 ---
 
@@ -402,6 +411,30 @@ mentorship-images/
 **Result:** 
 - 5MB photo → ~500KB compressed → ~50KB thumbnail
 - 1GB storage = ~2,000 full images + thumbnails
+
+### **Storage Cost Analysis with 25 Image Limit**
+
+**Per Session:**
+- 25 images × 500KB (compressed) = 12.5MB per session
+- 25 thumbnails × 50KB = 1.25MB per session
+- **Total per session: ~13.75MB**
+
+**Projected Usage:**
+- 10 students × 4 sessions = 40 sessions
+- 40 sessions × 13.75MB = 550MB
+- **Well within Supabase's 1GB free tier!**
+
+**Why 25 Images is Reasonable:**
+- Most sessions will have 3-10 images (homework, references, progress shots)
+- 25 is a generous buffer for comprehensive portfolio sessions
+- Prevents accidental bulk uploads or abuse
+- Students can delete old images if they need more space
+- Admins have unlimited for special cases (portfolios, exhibitions)
+
+**Cost Savings:**
+- Without limit: Risk of filling 1GB quickly
+- With 25/session limit: 1GB supports 72+ sessions (~18 students with 4 sessions each)
+- Keeps you in free tier for years!
 
 ---
 
