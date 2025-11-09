@@ -41,19 +41,19 @@ NODE_ENV=production
 ### Organization Details
 ```env
 # Your organization name (appears in welcome messages)
-ORGANIZATION_NAME=Huckleberry Art
+ORGANIZATION_NAME=Your Organization Name
 
 # Support email shown to students
-SUPPORT_EMAIL=huckleberryartinc@gmail.com
+SUPPORT_EMAIL=support@yourdomain.com
 
 # Discord user ID for support contact (appears in messages as @mention)
-SUPPORT_DISCORD_ID=184416083984384005
+SUPPORT_DISCORD_ID=123456789012345678
 
-# Name of support contact (e.g., "Dustin", "Support Team")
-SUPPORT_DISCORD_NAME=Dustin
+# Name of support contact (e.g., "Admin", "Support Team")
+SUPPORT_DISCORD_NAME=Admin
 
 # Admin email where purchase notifications are sent
-ADMIN_EMAIL=huckleberryartinc@gmail.com
+ADMIN_EMAIL=admin@yourdomain.com
 
 # Number of sessions included per purchase (default: 4)
 DEFAULT_SESSIONS_PER_PURCHASE=4
@@ -69,7 +69,7 @@ DEFAULT_SESSIONS_PER_PURCHASE=4
 - Student Discord DMs
 - All student-facing communications
 
-**Example:** "Welcome to **Huckleberry Art** Community!"
+**Example:** "Welcome to **Your Organization Name** Community!"
 
 ### `SUPPORT_EMAIL`
 **Appears in:**
@@ -77,13 +77,13 @@ DEFAULT_SESSIONS_PER_PURCHASE=4
 - Error pages
 - Student Discord DMs
 
-**Example:** "Questions? Contact us at **huckleberryartinc@gmail.com**"
+**Example:** "Questions? Contact us at **support@yourdomain.com**"
 
 ### `SUPPORT_DISCORD_ID` & `SUPPORT_DISCORD_NAME`
 **Appears in:**
 - Student Discord DMs
 
-**Example:** "Having issues? Email us at support@example.com or send a DM to **Dustin** (**@norespnse**)"
+**Example:** "Having issues? Email us at support@example.com or send a DM to **Admin** (**@YourUsername**)"
 
 ### `ADMIN_EMAIL`
 **Receives:**
@@ -143,15 +143,15 @@ If you're deploying this bot for your own organization:
 
 ---
 
-## 📧 Example: Full Configuration for Huckleberry Art
+## 📧 Example: Full Configuration
 
 ```env
-# Huckleberry Art specific values
-ORGANIZATION_NAME=Huckleberry Art
-SUPPORT_EMAIL=huckleberryartinc@gmail.com
-SUPPORT_DISCORD_ID=184416083984384005
-SUPPORT_DISCORD_NAME=Dustin
-ADMIN_EMAIL=huckleberryartinc@gmail.com
+# Example organization values
+ORGANIZATION_NAME=My Mentorship Academy
+SUPPORT_EMAIL=support@mydomain.com
+SUPPORT_DISCORD_ID=123456789012345678
+SUPPORT_DISCORD_NAME=Admin
+ADMIN_EMAIL=admin@mydomain.com
 DEFAULT_SESSIONS_PER_PURCHASE=4
 ```
 

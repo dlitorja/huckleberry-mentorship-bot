@@ -137,10 +137,10 @@ app.post('/webhook/kajabi', async (req, res) => {
             },
             body: JSON.stringify({
               content: `🎉 **Payment Processed Successfully!**\n\n` +
-                `Thank you for continuing your mentorship with **${instructorName}**!\n\n` +
-                `✅ **${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new sessions** have been added to your account.\n` +
-                `💬 Reach out to your instructor to schedule your next session.\n\n` +
-                `We're excited to continue working with you!\n\n` +
+                `Thank you for continuing your **1-on-1 mentorship** with **${instructorName}**!\n\n` +
+                `✅ **${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new 1-on-1 sessions** have been added to your account.\n` +
+                `💬 Reach out to your instructor to schedule your next 1-on-1 session.\n\n` +
+                `We're excited to continue your personalized mentorship journey!\n\n` +
                 `_Having any issues? ${getSupportContactString()}_`
             }),
           });
@@ -267,13 +267,13 @@ app.post('/webhook/kajabi', async (req, res) => {
     const { data: emailData, error: emailError } = await resend.emails.send({
       from: process.env.RESEND_FROM_EMAIL!,
       to: email,
-      subject: 'Welcome to Your Mentorship Program! 🎉',
+      subject: 'Welcome to Your 1-on-1 Mentorship Program! 🎉',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h1 style="color: #5865F2;">Welcome to ${CONFIG.ORGANIZATION_NAME}!</h1>
+          <h1 style="color: #5865F2;">Welcome to Your 1-on-1 Mentorship!</h1>
           
           <p style="font-size: 16px; line-height: 1.6;">
-            Thank you for your purchase! We're excited to have you join our community.
+            Thank you for purchasing your 1-on-1 mentorship! We're excited to have you join our community.
           </p>
           
           <div style="background-color: #f0f7ff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #5865F2;">

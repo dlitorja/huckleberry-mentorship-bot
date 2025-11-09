@@ -9,7 +9,7 @@ The bot will automatically notify you via email or Discord DM for the following 
 ### 1. 🛒 **Purchase Notification** (📧 Email)
 **When:** Someone purchases a mentorship offer on Kajabi
 
-**You'll receive an email at:** `huckleberryartinc@gmail.com`
+**You'll receive an email at:** The address configured in `ADMIN_EMAIL` environment variable
 
 **Email contains:**
 - 👤 Student email
@@ -230,7 +230,7 @@ fly secrets set DISCORD_ADMIN_ID="new_discord_user_id"
 ## 📝 Summary
 
 You now have complete visibility into:
-- ✅ Every purchase (instant **email** to huckleberryartinc@gmail.com)
+- ✅ Every purchase (instant **email** to admin)
 - ✅ Every successful join (instant **Discord DM**)
 - ✅ Every error (instant **Discord DM** with details)
 - ✅ Pending joins that need follow-up (manual check via commands)
@@ -239,7 +239,7 @@ You now have complete visibility into:
 **You're always in the loop!** 🎉
 
 ### 📬 Notification Channels:
-- **Email** (huckleberryartinc@gmail.com): Purchase alerts
-- **Discord DM**: Join confirmations, errors, delayed join alerts
+- **Email** (configured via `ADMIN_EMAIL`): Purchase alerts
+- **Discord DM** (configured via `DISCORD_ADMIN_ID`): Join confirmations, errors, delayed join alerts
 - **Commands**: On-demand summaries and checks
 

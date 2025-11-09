@@ -281,7 +281,13 @@ router.get('/oauth/callback', async (req, res) => {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              content: `🎓 New Mentee Alert!\n\n<@${userData.id}> (${userData.email}) has joined and been assigned to you.`
+              content: `🎓 **New Mentee Alert!**\n\n` +
+                `👤 **Student:** <@${userData.id}> (${userData.email})\n` +
+                `📦 **Offer:** ${offerDetails?.offer_name || 'Unknown'}\n` +
+                `📊 **Sessions:** ${sessionInfo}\n` +
+                `🛒 **Purchased:** ${purchaseDate.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}\n` +
+                `✅ **Joined:** ${joinDate.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}\n\n` +
+                `Welcome your new student and help them schedule their first session!`
             }),
           });
           console.log('✅ Notification DM sent to instructor');
