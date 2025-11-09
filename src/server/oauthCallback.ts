@@ -127,9 +127,16 @@ router.get('/oauth/callback', async (req, res) => {
       })
       .eq('id', pendingJoin.id);
 
-    // Try to send welcome DM
+    // Get instructor Discord ID
+    const { data: instructorData, error: instructorError } = await supabase
+      .from('instructors')
+      .select('discord_id')
+      .eq('id', pendingJoin.instructor_id)
+      .single();
+
+    // Send welcome DM to mentee
     try {
-      const dmChannelResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
+      const menteeDmResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
         method: 'POST',
         headers: {
           Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
@@ -140,23 +147,58 @@ router.get('/oauth/callback', async (req, res) => {
         }),
       });
       
-      const dmChannel: any = await dmChannelResponse.json();
+      const menteeDmChannel: any = await menteeDmResponse.json();
       
-      if (dmChannel.id) {
-        await fetch(`https://discord.com/api/channels/${dmChannel.id}/messages`, {
+      if (menteeDmChannel.id) {
+        const instructorMention = instructorData?.discord_id ? `<@${instructorData.discord_id}>` : 'your instructor';
+        await fetch(`https://discord.com/api/channels/${menteeDmChannel.id}/messages`, {
           method: 'POST',
           headers: {
             Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            content: `Welcome to the community! You've been assigned the "1-on-1 Mentee" role. 🎉`
+            content: `Welcome to the community! 🎉\n\nYou've been assigned the "1-on-1 Mentee" role.\nYour instructor is ${instructorMention}.`
           }),
         });
-        console.log('✅ Welcome DM sent');
+        console.log('✅ Welcome DM sent to mentee');
       }
     } catch (dmError) {
-      console.log('Could not send DM:', dmError);
+      console.log('Could not send DM to mentee:', dmError);
+    }
+
+    // Send notification DM to instructor
+    if (instructorData?.discord_id) {
+      try {
+        const instructorDmResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            recipient_id: instructorData.discord_id,
+          }),
+        });
+        
+        const instructorDmChannel: any = await instructorDmResponse.json();
+        
+        if (instructorDmChannel.id) {
+          await fetch(`https://discord.com/api/channels/${instructorDmChannel.id}/messages`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              content: `🎓 New Mentee Alert!\n\n<@${userData.id}> (${userData.email}) has joined and been assigned to you.`
+            }),
+          });
+          console.log('✅ Notification DM sent to instructor');
+        }
+      } catch (instructorDmError) {
+        console.log('Could not send DM to instructor:', instructorDmError);
+      }
     }
 
     // Success page
