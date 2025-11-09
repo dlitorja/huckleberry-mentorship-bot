@@ -35,6 +35,7 @@ Complete list of all bot commands organized by user type.
 
 ### Manual Management
 - **`/linkstudent`** - Manually link a student's email to their Discord account
+- **`/removestudent`** - Remove a student's 1-on-1 Mentee role (NEW!)
 - **`/viewnotes`** - View notes for any student (admin override)
 
 ---
@@ -181,6 +182,38 @@ Instructor: @AnotherInstructor
 
 ---
 
+### `/removestudent student:@Name [reason:Text] [send_goodbye:true/false]`
+**What it does:**
+- Removes the "1-on-1 Mentee" role from a student
+- Updates mentorship status to "ended" in database
+- Optionally sends goodbye DM to student
+- Notifies admin (you) with details
+- Preserves mentorship history for analytics
+
+**Options:**
+- `student` (required): The Discord user to remove
+- `reason` (optional): Why the role is being removed (default: "Mentorship ended")
+- `send_goodbye` (optional): Send goodbye DM? (default: true)
+
+**Use Cases:**
+- Manual cancellations/refunds (though Kajabi webhooks handle this automatically)
+- Students who completed their program
+- Policy violations or other admin actions
+- Testing removal flow
+
+**Examples:**
+```
+/removestudent student:@JohnDoe
+
+/removestudent student:@JaneDoe reason:"Completed mentorship program"
+
+/removestudent student:@BobSmith reason:"Refund processed manually" send_goodbye:false
+```
+
+**Note:** For automatic removal on Kajabi cancellations/refunds, see [STUDENT_REMOVAL.md](STUDENT_REMOVAL.md)
+
+---
+
 ## 🎯 Typical Workflows
 
 ### **After a Session:**
@@ -226,11 +259,11 @@ When built, will add:
 
 ---
 
-## 🎉 **Total Commands: 12**
+## 🎉 **Total Commands: 13**
 
 - 4 for session management
-- 3 for session notes (NEW!)
-- 5 for admin monitoring and management
+- 3 for session notes
+- 6 for admin monitoring and management (including removestudent!)
 
 Your mentorship bot is now a complete platform! 🚀
 

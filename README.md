@@ -9,11 +9,12 @@ A comprehensive Discord bot and webhook system for managing 1-on-1 mentorship pr
 - **OAuth Flow**: Seamless Discord OAuth authentication assigns roles and creates mentorship records
 - **Session Management**: Track sessions with date tracking, notes, and resource links
 - **Recurring Students**: Automatically handles returning students with session banking
+- **Student Removal**: Automatic role removal on cancellations/refunds via Kajabi webhooks, plus manual admin control
 - **Admin Notifications**: Real-time alerts via email and Discord DM for purchases, errors, and important events
 
 ### 💬 Discord Commands
 - **Instructor Commands**: `/session`, `/addsessions`, `/liststudents`, `/sessionsummary`, `/addnote`, `/viewnotes`, `/addlink`
-- **Admin Commands**: `/adminsummary`, `/linkstudent`
+- **Admin Commands**: `/adminsummary`, `/linkstudent`, `/removestudent`
 - **Session Notes**: Add text notes and resource links to track mentorship progress
 
 ### 📧 Communication
@@ -43,6 +44,7 @@ For detailed setup instructions, see:
 - **[DEPLOYMENT.md](DEPLOYMENT.md)** - Comprehensive deployment guide
 - **[COMMANDS_SUMMARY.md](COMMANDS_SUMMARY.md)** - All Discord commands reference
 - **[ADMIN_FEATURES.md](ADMIN_FEATURES.md)** - Admin notification system details
+- **[STUDENT_REMOVAL.md](STUDENT_REMOVAL.md)** - Automatic & manual student removal guide
 
 ### Local Development
 
@@ -115,7 +117,8 @@ The bot uses multiple Supabase tables. Run the SQL files in the `database/` dire
 1. **`database/schema.sql`** - Core tables (instructors, mentees, mentorships, pending_joins, kajabi_offers)
 2. **`database/add_session_tracking.sql`** - Adds `last_session_date` column
 3. **`database/add_session_notes.sql`** - Adds session_notes and session_links tables
-4. **`database/insert_kajabi_offers.sql`** - Populate your Kajabi offer mappings
+4. **`database/add_mentorship_status.sql`** - Adds status tracking for ended mentorships
+5. **`database/insert_kajabi_offers.sql`** - Populate your Kajabi offer mappings
 
 **Key Tables:**
 - `instructors` - Instructor profiles with Discord IDs
@@ -146,6 +149,7 @@ For complete command documentation, see **[COMMANDS_SUMMARY.md](COMMANDS_SUMMARY
 
 - **`/adminsummary`** - View all mentorships across all instructors (admin only)
 - **`/linkstudent`** - Manually link a student's email to their Discord account (admin only)
+- **`/removestudent`** - Remove a student's 1-on-1 Mentee role (admin only)
 
 ### Example Usage
 
@@ -154,6 +158,7 @@ For complete command documentation, see **[COMMANDS_SUMMARY.md](COMMANDS_SUMMARY
 /addsessions student:@JaneDoe amount:4
 /addnote student:@JohnDoe note:Discussed composition principles
 /addlink note_id:123 url:https://example.com/resource title:Great Tutorial
+/removestudent student:@CompletedStudent reason:"Graduated from program"
 ```
 
 ## Project Structure

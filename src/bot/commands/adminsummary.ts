@@ -57,6 +57,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
   // Format output
   let message = '📊 **Mentorship Summary (All Instructors)**\n\n';
+  let studentsAtZero = 0;
   
   for (const [instructorId, students] of Object.entries(groupedByInstructor)) {
     message += `**Instructor:** <@${instructorId}>\n`;
@@ -64,9 +65,19 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       const lastSession = s.lastSession 
         ? new Date(s.lastSession).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
         : 'No sessions yet';
-      message += `  └ <@${s.menteeId}>: ${s.remaining}/${s.total} sessions | Last: ${lastSession}\n`;
+      
+      // Add visual indicator for 0 sessions
+      const zeroIndicator = s.remaining === 0 ? ' ⚠️ **NEEDS ATTENTION**' : '';
+      if (s.remaining === 0) studentsAtZero++;
+      
+      message += `  └ <@${s.menteeId}>: ${s.remaining}/${s.total} sessions | Last: ${lastSession}${zeroIndicator}\n`;
     });
     message += '\n';
+  }
+  
+  // Add summary at the end
+  if (studentsAtZero > 0) {
+    message += `\n⚠️ **${studentsAtZero} student${studentsAtZero === 1 ? '' : 's'} at 0 sessions** - Consider reaching out about renewal plans.\n`;
   }
 
   // Discord has a 2000 character limit, split if needed

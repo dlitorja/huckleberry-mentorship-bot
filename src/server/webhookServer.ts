@@ -8,6 +8,7 @@ import { Resend } from 'resend';
 import oauthCallback from './oauthCallback.js';
 import { notifyAdminPurchase, notifyAdminError } from '../utils/adminNotifications.js';
 import { CONFIG, getSupportContactString } from '../config/constants.js';
+import { removeStudentRole } from '../utils/roleManagement.js';
 
 const app = express();
 const PORT = process.env.WEBHOOK_PORT || 3000;
@@ -384,11 +385,94 @@ app.post('/webhook/kajabi', async (req, res) => {
   }
 });
 
+// Kajabi cancellation/refund webhook endpoint
+app.post('/webhook/kajabi/cancellation', async (req, res) => {
+  try {
+    console.log('Received Kajabi cancellation webhook:', JSON.stringify(req.body, null, 2));
+
+    // Extract email from various possible Kajabi webhook formats
+    const email = req.body.member?.email || 
+                  req.body.payload?.member_email || 
+                  req.body.email ||
+                  req.body.subscription?.member?.email;
+    
+    // Extract event type
+    const eventType = req.body.event_type || req.body.type || 'unknown';
+
+    if (!email) {
+      console.error('Missing email in cancellation webhook');
+      return res.status(400).json({ error: 'Missing required field: email' });
+    }
+
+    console.log(`Processing cancellation for: ${email}, Event: ${eventType}`);
+
+    // Find student by email
+    const { data: menteeData, error: menteeError } = await supabase
+      .from('mentees')
+      .select('id, discord_id')
+      .eq('email', email.toLowerCase())
+      .maybeSingle();
+
+    if (menteeError || !menteeData || !menteeData.discord_id) {
+      console.log(`No active mentee found for ${email} - they may not have joined Discord yet`);
+      return res.json({ 
+        success: true, 
+        message: 'No active Discord user found - nothing to do'
+      });
+    }
+
+    // Determine reason based on event type
+    let reason = 'Subscription ended';
+    if (eventType.includes('cancel')) {
+      reason = 'Subscription cancelled';
+    } else if (eventType.includes('refund')) {
+      reason = 'Order refunded';
+    } else if (eventType.includes('expired')) {
+      reason = 'Subscription expired';
+    }
+
+    // Remove student role
+    const result = await removeStudentRole({
+      menteeDiscordId: menteeData.discord_id,
+      reason,
+      sendGoodbyeDm: true,
+      notifyAdmin: true,
+      client: undefined // Use API method since we don't have client in webhook context
+    });
+
+    if (result.success) {
+      console.log(`✅ Successfully processed cancellation for ${email}`);
+      return res.json({ 
+        success: true, 
+        message: 'Student role removed successfully'
+      });
+    } else {
+      console.error(`Failed to remove role for ${email}:`, result.message);
+      return res.status(500).json({ 
+        error: 'Failed to remove student role',
+        details: result.message
+      });
+    }
+
+  } catch (error) {
+    console.error('Cancellation webhook error:', error);
+    
+    await notifyAdminError({
+      type: 'cancellation_webhook_error',
+      message: 'Error processing Kajabi cancellation webhook',
+      details: error
+    });
+    
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`Webhook server running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
   console.log(`Kajabi webhook: http://localhost:${PORT}/webhook/kajabi`);
+  console.log(`Kajabi cancellation webhook: http://localhost:${PORT}/webhook/kajabi/cancellation`);
 });
 
 export default app;

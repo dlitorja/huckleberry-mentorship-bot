@@ -36,15 +36,28 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
+  let studentsAtZero = 0;
+  
   const message = data
     .map(row => {
       const lastSession = row.last_session_date 
         ? new Date(row.last_session_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
         : 'No sessions yet';
       
-      return `<@${(row.mentees as any)?.discord_id}> – ${row.sessions_remaining}/${row.total_sessions} sessions | Last: ${lastSession}`;
+      // Add visual indicator for 0 sessions
+      const zeroIndicator = row.sessions_remaining === 0 ? ' ⚠️ **NEEDS ATTENTION**' : '';
+      if (row.sessions_remaining === 0) studentsAtZero++;
+      
+      return `<@${(row.mentees as any)?.discord_id}> – ${row.sessions_remaining}/${row.total_sessions} sessions | Last: ${lastSession}${zeroIndicator}`;
     })
     .join('\n');
 
-  await interaction.editReply(message || 'No students found.');
+  let finalMessage = message || 'No students found.';
+  
+  // Add summary if students at zero
+  if (studentsAtZero > 0) {
+    finalMessage += `\n\n⚠️ **${studentsAtZero} student${studentsAtZero === 1 ? '' : 's'} at 0 sessions** - Consider reaching out about renewal plans.`;
+  }
+
+  await interaction.editReply(finalMessage);
 }

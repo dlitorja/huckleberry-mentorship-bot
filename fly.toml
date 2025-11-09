@@ -1,11 +1,8 @@
 # fly.toml app configuration file
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
-#
-# IMPORTANT: Change "app" to your unique Fly.io app name
-# Run: fly apps create your-unique-app-name
 
-app = "your-mentorship-bot"  # Change this to your unique app name
+app = "huckleberry-mentorship-bot"
 primary_region = "iad"  # Change this to your preferred region (iad = Virginia)
 
 [build]
