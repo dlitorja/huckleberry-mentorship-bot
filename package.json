@@ -6,7 +6,8 @@
     "start": "tsx src/bot/index.ts",
     "register": "tsx src/bot/registerCommands.ts",
     "webhook": "tsx src/server/webhookServer.ts",
-    "start:all": "tsx src/start.ts"
+    "start:all": "tsx src/start.ts",
+    "push:all": "git push origin main && git push gitlab main"
   },
   "dependencies": {
     "@discordjs/builders": "^1.13.0",
