@@ -5,7 +5,8 @@
   "scripts": {
     "start": "tsx src/bot/index.ts",
     "register": "tsx src/bot/registerCommands.ts",
-    "webhook": "tsx src/server/webhookServer.ts"
+    "webhook": "tsx src/server/webhookServer.ts",
+    "start:all": "tsx src/start.ts"
   },
   "dependencies": {
     "@discordjs/builders": "^1.13.0",
@@ -18,7 +19,8 @@
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "node-fetch": "^2.7.0",
-    "resend": "^6.4.2"
+    "resend": "^6.4.2",
+    "tsx": "^4.20.6"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
@@ -26,7 +28,6 @@
     "@types/node": "^24.10.0",
     "@types/node-fetch": "^2.6.13",
     "ts-node": "^10.9.2",
-    "tsx": "^4.20.6",
     "typescript": "^5.1.6"
   }
 }

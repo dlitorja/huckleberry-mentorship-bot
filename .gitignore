@@ -91,3 +91,7 @@ temp/
 supabase/
 backup.sql
 
+# Fly.io
+.fly/
+fly.toml.backup
+

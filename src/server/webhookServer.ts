@@ -31,21 +31,28 @@ app.post('/webhook/kajabi', async (req, res) => {
   try {
     console.log('Received Kajabi webhook:', JSON.stringify(req.body, null, 2));
 
-    const { email, offer_id } = req.body;
+    // Extract data from Kajabi's nested structure
+    // Supports both general webhooks (member.email, offer.id) and offer-specific webhooks (payload.member_email, payload.offer_id)
+    const email = req.body.member?.email || req.body.payload?.member_email || req.body.email;
+    const offer_id = req.body.offer?.id || req.body.payload?.offer_id || req.body.offer_id;
 
-    if (!email || !offer_id) {
+    if (!email || !offer_id || offer_id === 0) {
+      console.error('Missing email or offer_id. Email:', email, 'Offer ID:', offer_id);
       return res.status(400).json({ error: 'Missing required fields: email, offer_id' });
     }
+    
+    // Convert offer_id to string for consistency
+    const offerIdString = String(offer_id);
 
     // Lookup the instructor for this offer
     const { data: offerData, error: offerError } = await supabase
       .from('kajabi_offers')
       .select('instructor_id')
-      .eq('offer_id', offer_id)
+      .eq('offer_id', offerIdString)
       .single();
 
     if (offerError || !offerData) {
-      console.error('Offer not found:', offer_id, offerError);
+      console.error('Offer not found:', offerIdString, offerError);
       return res.status(404).json({ error: 'Offer not found in database' });
     }
 
@@ -55,7 +62,7 @@ app.post('/webhook/kajabi', async (req, res) => {
       .insert({
         email: email.toLowerCase(),
         instructor_id: offerData.instructor_id,
-        offer_id: offer_id,
+        offer_id: offerIdString,
         created_at: new Date().toISOString()
       });
 
