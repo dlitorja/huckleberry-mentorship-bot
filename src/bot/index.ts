@@ -108,9 +108,23 @@ client.on('guildMemberAdd', async member => {
       .update({ joined_at: new Date().toISOString() })
       .eq('id', pendingJoin.id);
 
-    // Welcome message (optional)
+    // Get instructor info for personalized message
+    const { data: instructorInfo } = await supabase
+      .from('instructors')
+      .select('discord_id, name')
+      .eq('id', pendingJoin.instructor_id)
+      .single();
+
+    // Welcome message
     try {
-      await member.send(`Welcome to the community! You've been assigned the "1-on-1 Mentee" role. 🎉`);
+      const instructorMention = instructorInfo?.discord_id ? `<@${instructorInfo.discord_id}>` : instructorInfo?.name || 'your instructor';
+      await member.send(
+        `Welcome to the Huckleberry Art Community! 🎉\n\n` +
+        `You've been assigned the "1-on-1 Mentee" role -- this is needed so you can access the mentorship voice channels!\n\n` +
+        `Your instructor is ${instructorMention}\n\n` +
+        `Please inform them of your schedule so they can check their availability -- please include your time zone, as all our instructors and students are all over the world!\n\n` +
+        `Having any issues? Email us at huckleberryartinc@gmail.com or send a DM to Dustin (<@184416083984384005>)`
+      );
     } catch (dmError) {
       console.log(`Could not DM ${member.user.tag}:`, dmError);
     }

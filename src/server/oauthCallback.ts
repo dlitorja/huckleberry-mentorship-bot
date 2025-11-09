@@ -4,6 +4,7 @@ import 'dotenv/config';
 import express from 'express';
 import fetch from 'node-fetch';
 import { supabase } from '../bot/supabaseClient.js';
+import { notifyAdminError } from '../utils/adminNotifications.js';
 
 const router = express.Router();
 
@@ -113,6 +114,14 @@ router.get('/oauth/callback', async (req, res) => {
       if (!assignRoleResponse.ok) {
         const errorText = await assignRoleResponse.text();
         console.error('Failed to assign role:', errorText);
+        
+        // Notify admin of role assignment failure
+        await notifyAdminError({
+          type: 'role_assignment_failed',
+          message: 'Failed to assign "1-on-1 Mentee" role',
+          details: errorText,
+          studentEmail: userData.email
+        });
       } else {
         console.log(`✅ Successfully assigned "1-on-1 Mentee" role to ${userData.email}`);
       }
@@ -127,12 +136,88 @@ router.get('/oauth/callback', async (req, res) => {
       })
       .eq('id', pendingJoin.id);
 
-    // Get instructor Discord ID
+    // Get instructor Discord ID and offer details
     const { data: instructorData, error: instructorError } = await supabase
       .from('instructors')
-      .select('discord_id')
+      .select('discord_id, name')
       .eq('id', pendingJoin.instructor_id)
       .single();
+
+    // Get offer details
+    const { data: offerDetails } = await supabase
+      .from('kajabi_offers')
+      .select('offer_name')
+      .eq('offer_id', pendingJoin.offer_id)
+      .single();
+
+    // Get mentorship to show session count
+    const { data: menteeRecord } = await supabase
+      .from('mentees')
+      .select('id')
+      .eq('discord_id', userData.id)
+      .single();
+
+    let sessionInfo = 'Sessions not yet configured';
+    if (menteeRecord) {
+      const { data: mentorshipData } = await supabase
+        .from('mentorships')
+        .select('sessions_remaining, total_sessions')
+        .eq('mentee_id', menteeRecord.id)
+        .eq('instructor_id', pendingJoin.instructor_id)
+        .single();
+      
+      if (mentorshipData) {
+        sessionInfo = `${mentorshipData.sessions_remaining}/${mentorshipData.total_sessions} sessions`;
+      }
+    }
+
+    // Format purchase date in friendly format
+    const purchaseDate = new Date(pendingJoin.created_at);
+    const joinDate = new Date();
+    const timeToJoin = Math.floor((joinDate.getTime() - purchaseDate.getTime()) / (1000 * 60));
+    const friendlyTimeToJoin = timeToJoin < 60 
+      ? `${timeToJoin} minutes` 
+      : `${Math.floor(timeToJoin / 60)} hours ${timeToJoin % 60} minutes`;
+
+    // Notify admin of successful join
+    try {
+      const adminDmResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          recipient_id: process.env.DISCORD_ADMIN_ID,
+        }),
+      });
+      
+      const adminDmChannel: any = await adminDmResponse.json();
+      
+      if (adminDmChannel.id) {
+        const instructorMention = instructorData?.discord_id ? `<@${instructorData.discord_id}>` : 'Unknown';
+        await fetch(`https://discord.com/api/channels/${adminDmChannel.id}/messages`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            content: `✅ **STUDENT JOINED SUCCESSFULLY**\n\n` +
+              `👤 **Student:** <@${userData.id}> (${userData.email})\n` +
+              `👨‍🏫 **Instructor:** ${instructorMention}\n` +
+              `📦 **Offer:** ${offerDetails?.offer_name || 'Unknown'}\n` +
+              `📊 **Sessions:** ${sessionInfo}\n` +
+              `🛒 **Purchased:** ${purchaseDate.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}\n` +
+              `✅ **Joined:** ${joinDate.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}\n` +
+              `⏱️ **Time to Join:** ${friendlyTimeToJoin}`
+          }),
+        });
+        console.log('✅ Admin notification sent for successful join');
+      }
+    } catch (adminNotifyError) {
+      console.log('Could not send admin notification:', adminNotifyError);
+    }
 
     // Send welcome DM to mentee
     try {
@@ -158,7 +243,11 @@ router.get('/oauth/callback', async (req, res) => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            content: `Welcome to the community! 🎉\n\nYou've been assigned the "1-on-1 Mentee" role.\nYour instructor is ${instructorMention}.`
+            content: `Welcome to the Huckleberry Art Community! 🎉\n\n` +
+              `You've been assigned the "1-on-1 Mentee" role -- this is needed so you can access the mentorship voice channels!\n\n` +
+              `Your instructor is ${instructorMention}\n\n` +
+              `Please inform them of your schedule so they can check their availability -- please include your time zone, as all our instructors and students are all over the world!\n\n` +
+              `Having any issues? Email us at huckleberryartinc@gmail.com or send a DM to Dustin (<@184416083984384005>)`
           }),
         });
         console.log('✅ Welcome DM sent to mentee');
