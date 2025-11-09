@@ -48,18 +48,6 @@ router.get('/oauth/callback', async (req, res) => {
     const userData: any = await userResponse.json();
     console.log('User authenticated:', userData.email, userData.id);
 
-    // Add user to guild
-    await fetch(`https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/members/${userData.id}`, {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        access_token: tokenData.access_token,
-      }),
-    });
-
     // Find pending join by email
     const { data: pendingJoin, error } = await supabase
       .from('pending_joins')
@@ -83,6 +71,53 @@ router.get('/oauth/callback', async (req, res) => {
       `);
     }
 
+    // Find the "1-on-1 Mentee" role ID from your guild
+    const rolesResponse = await fetch(`https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/roles`, {
+      headers: {
+        Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+      },
+    });
+    const roles: any = await rolesResponse.json();
+    const menteeRole = roles.find((r: any) => r.name === '1-on-1 Mentee');
+
+    if (!menteeRole) {
+      console.error('Could not find "1-on-1 Mentee" role in guild');
+    }
+
+    // Add user to guild (if not already a member)
+    const addMemberResponse = await fetch(`https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/members/${userData.id}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        access_token: tokenData.access_token,
+        roles: menteeRole ? [menteeRole.id] : []
+      }),
+    });
+
+    const addMemberResult = await addMemberResponse.text();
+    console.log('Add member result:', addMemberResponse.status, addMemberResult);
+
+    // Assign role (works for both new and existing members)
+    if (menteeRole) {
+      const assignRoleResponse = await fetch(`https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/members/${userData.id}/roles/${menteeRole.id}`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+        },
+      });
+      console.log('Assign role result:', assignRoleResponse.status);
+      
+      if (!assignRoleResponse.ok) {
+        const errorText = await assignRoleResponse.text();
+        console.error('Failed to assign role:', errorText);
+      } else {
+        console.log(`✅ Successfully assigned "1-on-1 Mentee" role to ${userData.email}`);
+      }
+    }
+
     // Update pending join with Discord user ID
     await supabase
       .from('pending_joins')
@@ -92,13 +127,45 @@ router.get('/oauth/callback', async (req, res) => {
       })
       .eq('id', pendingJoin.id);
 
+    // Try to send welcome DM
+    try {
+      const dmChannelResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          recipient_id: userData.id,
+        }),
+      });
+      
+      const dmChannel: any = await dmChannelResponse.json();
+      
+      if (dmChannel.id) {
+        await fetch(`https://discord.com/api/channels/${dmChannel.id}/messages`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            content: `Welcome to the community! You've been assigned the "1-on-1 Mentee" role. 🎉`
+          }),
+        });
+        console.log('✅ Welcome DM sent');
+      }
+    } catch (dmError) {
+      console.log('Could not send DM:', dmError);
+    }
+
     // Success page
     res.send(`
       <html>
         <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
           <h1>✅ Welcome to the Community!</h1>
           <p>You've successfully joined our Discord server.</p>
-          <p>Your "1-on-1 Mentee" role will be assigned shortly.</p>
+          <p>Your "1-on-1 Mentee" role has been assigned!</p>
           <p>You can close this window and return to Discord.</p>
           <script>
             setTimeout(() => {
