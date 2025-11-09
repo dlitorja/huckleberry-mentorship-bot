@@ -12,13 +12,49 @@ export const data = new SlashCommandBuilder()
       .setName('student')
       .setDescription('The student to update')
       .setRequired(true)
+  )
+  .addStringOption(option =>
+    option
+      .setName('date')
+      .setDescription('Session date (YYYY-MM-DD or MM/DD/YYYY). Leave blank for today.')
+      .setRequired(false)
   );
 
 export async function execute(interaction: ChatInputCommandInteraction) {
   const student = interaction.options.getUser('student', true);
   const instructorDiscordId = interaction.user.id;
+  const dateInput = interaction.options.getString('date');
 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  // Parse and validate date
+  let sessionDate: Date;
+  if (dateInput) {
+    // Try to parse the date
+    sessionDate = new Date(dateInput);
+    
+    // Check if date is valid
+    if (isNaN(sessionDate.getTime())) {
+      await interaction.editReply(
+        `❌ Invalid date format. Please use:\n` +
+        `• YYYY-MM-DD (e.g., 2025-11-09)\n` +
+        `• MM/DD/YYYY (e.g., 11/09/2025)\n` +
+        `• Or leave blank for today`
+      );
+      return;
+    }
+    
+    // Check if date is in the future
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+    if (sessionDate > today) {
+      await interaction.editReply(`❌ Session date cannot be in the future.`);
+      return;
+    }
+  } else {
+    // Use today if no date specified
+    sessionDate = new Date();
+  }
 
   // Lookup instructor UUID
   const { data: instructorData, error: instructorError } = await supabase
@@ -67,7 +103,10 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   const newCount = Math.max(0, data.sessions_remaining - 1);
   const { error: updateError } = await supabase
     .from('mentorships')
-    .update({ sessions_remaining: newCount })
+    .update({ 
+      sessions_remaining: newCount,
+      last_session_date: sessionDate.toISOString()
+    })
     .eq('id', data.id);
 
   if (updateError) {
@@ -76,9 +115,19 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  let message = `${student.tag} updated. Remaining sessions: ${newCount}/${data.total_sessions}.`;
+  // Format date for display
+  const dateDisplay = sessionDate.toLocaleDateString('en-US', { 
+    month: 'short', 
+    day: 'numeric', 
+    year: 'numeric' 
+  });
+
+  let message = `✅ ${student.tag} updated.\n\n`;
+  message += `📊 **Remaining sessions:** ${newCount}/${data.total_sessions}\n`;
+  message += `📅 **Last session:** ${dateDisplay}`;
+  
   if (newCount === 0) {
-    message += ' ⚠️ All sessions used!';
+    message += '\n\n⚠️ **All sessions used!**';
   }
 
   await interaction.editReply(message);

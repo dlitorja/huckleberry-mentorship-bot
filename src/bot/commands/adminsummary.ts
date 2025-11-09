@@ -26,7 +26,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   // Fetch all mentorships with instructor and mentee details
   const { data: mentorships, error } = await supabase
     .from('mentorships')
-    .select('sessions_remaining, total_sessions, instructors(discord_id), mentees(discord_id)')
+    .select('sessions_remaining, total_sessions, last_session_date, instructors(discord_id), mentees(discord_id)')
     .order('instructors(discord_id)');
 
   if (error) {
@@ -49,7 +49,8 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     acc[instructorId].push({
       menteeId: m.mentees?.discord_id,
       remaining: m.sessions_remaining,
-      total: m.total_sessions
+      total: m.total_sessions,
+      lastSession: m.last_session_date
     });
     return acc;
   }, {});
@@ -60,7 +61,10 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   for (const [instructorId, students] of Object.entries(groupedByInstructor)) {
     message += `**Instructor:** <@${instructorId}>\n`;
     (students as any[]).forEach(s => {
-      message += `  └ <@${s.menteeId}>: ${s.remaining}/${s.total} sessions\n`;
+      const lastSession = s.lastSession 
+        ? new Date(s.lastSession).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        : 'No sessions yet';
+      message += `  └ <@${s.menteeId}>: ${s.remaining}/${s.total} sessions | Last: ${lastSession}\n`;
     });
     message += '\n';
   }

@@ -48,7 +48,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   // Lookup mentorship record
   const { data, error } = await supabase
     .from('mentorships')
-    .select('sessions_remaining, total_sessions')
+    .select('sessions_remaining, total_sessions, last_session_date')
     .eq('mentee_id', menteeData.id)
     .eq('instructor_id', instructorData.id)
     .single();
@@ -59,5 +59,12 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  await interaction.editReply(`${student} – ${data.sessions_remaining}/${data.total_sessions} sessions remaining.`);
+  const lastSession = data.last_session_date 
+    ? new Date(data.last_session_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : 'No sessions yet';
+  
+  await interaction.editReply(
+    `${student} – ${data.sessions_remaining}/${data.total_sessions} sessions remaining.\n` +
+    `📅 **Last session:** ${lastSession}`
+  );
 }

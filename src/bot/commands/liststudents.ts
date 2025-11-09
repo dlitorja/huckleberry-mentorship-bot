@@ -27,7 +27,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
   const { data, error } = await supabase
     .from('mentorships')
-    .select('mentee_id, sessions_remaining, total_sessions, mentees(discord_id)')
+    .select('mentee_id, sessions_remaining, total_sessions, last_session_date, mentees(discord_id)')
     .eq('instructor_id', instructorData.id);
 
   if (error || !data || data.length === 0) {
@@ -37,10 +37,14 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   const message = data
-    .map(
-      row => `<@${(row.mentees as any)?.discord_id}> – ${row.sessions_remaining}/${row.total_sessions} sessions`
-    )
+    .map(row => {
+      const lastSession = row.last_session_date 
+        ? new Date(row.last_session_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : 'No sessions yet';
+      
+      return `<@${(row.mentees as any)?.discord_id}> – ${row.sessions_remaining}/${row.total_sessions} sessions | Last: ${lastSession}`;
+    })
     .join('\n');
 
-  await interaction.editReply(message);
+  await interaction.editReply(message || 'No students found.');
 }
