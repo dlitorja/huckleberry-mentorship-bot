@@ -10,8 +10,13 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  // Admin check - only you can use this command
-  const ADMIN_USER_ID = process.env.DISCORD_ADMIN_ID || '184416083984384005';
+  // Admin check - only the configured admin can use this command
+  const ADMIN_USER_ID = process.env.DISCORD_ADMIN_ID;
+  
+  if (!ADMIN_USER_ID) {
+    await interaction.editReply('⚠️ Admin user ID is not configured.');
+    return;
+  }
   
   if (interaction.user.id !== ADMIN_USER_ID) {
     await interaction.editReply('⛔ This command is only available to administrators.');
