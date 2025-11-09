@@ -17,16 +17,44 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply();
 
   const student = interaction.options.getUser('student', true);
-  const instructorId = interaction.user.id;
+  const instructorDiscordId = interaction.user.id;
 
+  // Lookup instructor UUID
+  const { data: instructorData, error: instructorError } = await supabase
+    .from('instructors')
+    .select('id')
+    .eq('discord_id', instructorDiscordId)
+    .single();
+
+  if (instructorError || !instructorData) {
+    console.error('Instructor lookup error:', instructorError);
+    await interaction.editReply('Instructor not found in the database.');
+    return;
+  }
+
+  // Lookup mentee UUID
+  const { data: menteeData, error: menteeError } = await supabase
+    .from('mentees')
+    .select('id')
+    .eq('discord_id', student.id)
+    .single();
+
+  if (menteeError || !menteeData) {
+    console.error('Mentee lookup error:', menteeError);
+    await interaction.editReply('Student not found in the database.');
+    return;
+  }
+
+  // Lookup mentorship record
   const { data, error } = await supabase
     .from('mentorships')
     .select('sessions_remaining, total_sessions')
-    .eq('mentee_id', student.id)
-    .eq('instructor_id', instructorId)
+    .eq('mentee_id', menteeData.id)
+    .eq('instructor_id', instructorData.id)
     .single();
 
   if (error || !data) {
+    console.error('Mentorship lookup error:', error);
     await interaction.editReply(`Could not find a mentorship record for ${student.tag}.`);
     return;
   }
