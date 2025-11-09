@@ -1,7 +1,7 @@
 // src/bot/commands/liststudents.ts
 import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction } from 'discord.js';
-import { supabase } from '../supabaseClient';
+import { supabase } from '../supabaseClient.js';
 
 export const data = new SlashCommandBuilder()
   .setName('liststudents')
