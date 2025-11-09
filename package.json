@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "@discordjs/builders": "^1.13.0",
+    "@discordjs/rest": "^2.6.0",
+    "@supabase/supabase-js": "^2.80.0",
+    "discord-api-types": "^0.38.32",
+    "discord.js": "^14.24.2",
+    "dotenv": "^17.2.3"
+  }
+}
