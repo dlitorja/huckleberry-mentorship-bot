@@ -150,6 +150,20 @@ app.post('/webhook/kajabi', async (req, res) => {
         console.log('Could not send renewal DM to student:', dmError);
       }
 
+      // Get updated mentorship data to show new session total
+      const { data: updatedMentorship } = await supabase
+        .from('mentorships')
+        .select('sessions_remaining, total_sessions')
+        .eq('mentee_id', existingMentee.id)
+        .eq('instructor_id', offerData.instructor_id)
+        .single();
+
+      const sessionTotal = updatedMentorship 
+        ? `${updatedMentorship.sessions_remaining}/${updatedMentorship.total_sessions}` 
+        : 'N/A';
+
+      const purchaseTime = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+
       // Send notification to instructor via Discord DM
       const { data: instructorDiscordData } = await supabase
         .from('instructors')
@@ -181,9 +195,11 @@ app.post('/webhook/kajabi', async (req, res) => {
               },
               body: JSON.stringify({
                 content: `🔄 **Returning Student Renewed**\n\n` +
-                  `<@${existingMentee.discord_id}> (${email}) has renewed their mentorship!\n\n` +
-                  `✅ ${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new sessions added to their account.\n` +
-                  `📅 They're ready to schedule their next session.`
+                  `<@${existingMentee.discord_id}> (${email}) has renewed their **1-on-1 mentorship**!\n\n` +
+                  `✅ **${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new 1-on-1 sessions** added to their account.\n` +
+                  `📊 **Total Sessions:** ${sessionTotal}\n` +
+                  `🛒 **Purchased:** ${purchaseTime}\n\n` +
+                  `They're ready to schedule their next 1-on-1 session!`
               }),
             });
             console.log('✅ Renewal notification sent to instructor');
