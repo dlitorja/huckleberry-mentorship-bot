@@ -1,14 +1,19 @@
-// src/bot/registerCommands.ts
-
 import 'dotenv/config';
 import { REST } from '@discordjs/rest';
 import { Routes } from 'discord.js';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const commandsPath = path.join(__dirname, 'commands');
+const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.ts') || file.endsWith('.js'));
+
+const commands: any[] = [];
+
+for (const file of commandFiles) {
+  const filePath = path.join(commandsPath, file);
+  const command = await import(filePath);
+  if ('data' in command) commands.push(command.data.toJSON());
+}
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN!);
 
@@ -17,39 +22,20 @@ async function registerCommands() {
     console.log('Started refreshing application (/) commands.');
 
     const guildId = process.env.DISCORD_GUILD_ID;
-    const clientId = process.env.DISCORD_CLIENT_ID;
-
-    if (!guildId || !clientId) {
-      console.error('DISCORD_GUILD_ID or DISCORD_CLIENT_ID is not set.');
+    if (!guildId) {
+      console.error('DISCORD_GUILD_ID is not set.');
       return;
     }
 
-    const commandsPath = path.join(__dirname, 'commands');
-    const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.ts') || file.endsWith('.js'));
-
-    const commands: any[] = [];
-
-    for (const file of commandFiles) {
-      const filePath = path.join(commandsPath, file);
-      // Convert to file:// URL for ES module dynamic import
-      const fileUrl = pathToFileURL(filePath).href;
-      // Dynamic import for ES modules
-      const command = await import(fileUrl);
-      if ('data' in command) {
-        commands.push(command.data.toJSON());
-      }
-    }
-
     await rest.put(
-      Routes.applicationGuildCommands(clientId, guildId),
+      Routes.applicationGuildCommands(process.env.DISCORD_CLIENT_ID!, guildId),
       { body: commands }
     );
 
     console.log('Successfully reloaded application (/) commands.');
   } catch (error) {
-    console.error('Error registering commands:', error);
+    console.error(error);
   }
 }
 
-// Run the registration
 registerCommands();
