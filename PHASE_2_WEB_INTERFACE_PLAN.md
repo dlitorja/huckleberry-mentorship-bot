@@ -191,16 +191,24 @@ huckleberry-web-portal/
 - [ ] Session detail page (view notes and links)
 - [ ] Permission checks (students see own, instructors see their students)
 
-#### **Day 8-10: Image Upload**
+#### **Day 8-10: Image Upload (with Drag-and-Drop!)**
 - [ ] Set up Supabase Storage bucket for images
-- [ ] Build ImageUploader component with drag-and-drop
-- [ ] Implement client-side image compression
+- [ ] **Build ImageUploader component with drag-and-drop support**
+  - [ ] Use React Dropzone library (easy drag-and-drop)
+  - [ ] Support dragging files from desktop
+  - [ ] Also support click-to-browse (traditional upload)
+  - [ ] Multi-file upload (drag multiple images at once)
+  - [ ] Show preview thumbnails before uploading
+  - [ ] File type validation (images only)
+- [ ] Implement client-side image compression (before upload)
 - [ ] API route: POST upload image with validation
 - [ ] **Enforce 25 image limit per session (students/instructors only)**
 - [ ] Display image counter: "12/25 images uploaded"
 - [ ] Disable upload button when limit reached (non-admins)
 - [ ] Link images to session notes
 - [ ] Display uploaded images in gallery
+
+**Drag-and-Drop is EASY and will be included!** ✅
 
 #### **Day 11-14: Image Gallery & Polish**
 - [ ] Build ImageGallery component with lightbox
