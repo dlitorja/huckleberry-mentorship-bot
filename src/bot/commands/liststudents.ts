@@ -1,6 +1,6 @@
 // src/bot/commands/liststudents.ts
 import { SlashCommandBuilder } from '@discordjs/builders';
-import { ChatInputCommandInteraction } from 'discord.js';
+import { ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
 
 export const data = new SlashCommandBuilder()
@@ -8,7 +8,7 @@ export const data = new SlashCommandBuilder()
   .setDescription('List all your students and remaining sessions.');
 
 export async function execute(interaction: ChatInputCommandInteraction) {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const instructorId = interaction.user.id;
 

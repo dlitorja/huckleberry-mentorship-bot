@@ -14,7 +14,7 @@ export const data = new SlashCommandBuilder()
   );
 
 export async function execute(interaction: ChatInputCommandInteraction) {
-  await interaction.deferReply({ ephemeral: false });
+  await interaction.deferReply();
 
   const student = interaction.options.getUser('student', true);
   const instructorId = interaction.user.id;

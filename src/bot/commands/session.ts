@@ -1,7 +1,7 @@
 // src/bot/commands/session.ts
 
 import { SlashCommandBuilder } from '@discordjs/builders';
-import { ChatInputCommandInteraction } from 'discord.js';
+import { ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
 
 export const data = new SlashCommandBuilder()
@@ -18,7 +18,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   const student = interaction.options.getUser('student', true);
   const instructorId = interaction.user.id;
 
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const { data, error } = await supabase
     .from('mentorships')
