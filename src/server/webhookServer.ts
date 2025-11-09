@@ -7,6 +7,7 @@ import { supabase } from '../bot/supabaseClient.js';
 import { Resend } from 'resend';
 import oauthCallback from './oauthCallback.js';
 import { notifyAdminPurchase, notifyAdminError } from '../utils/adminNotifications.js';
+import { CONFIG, getSupportContactString } from '../config/constants.js';
 
 const app = express();
 const PORT = process.env.WEBHOOK_PORT || 3000;
@@ -93,12 +94,12 @@ app.post('/webhook/kajabi', async (req, res) => {
           .insert({
             mentee_id: existingMentee.id,
             instructor_id: offerData.instructor_id,
-            sessions_remaining: 4,
-            total_sessions: 4
+            sessions_remaining: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE,
+            total_sessions: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE
           });
       } else {
-        // Update sessions: Add 4 to their current balance (allows banking)
-        const newSessionsRemaining = mentorship.sessions_remaining + 4;
+        // Update sessions: Add to their current balance (allows banking)
+        const newSessionsRemaining = mentorship.sessions_remaining + CONFIG.DEFAULT_SESSIONS_PER_PURCHASE;
         const newTotalSessions = Math.max(mentorship.total_sessions, newSessionsRemaining);
 
         await supabase
@@ -109,7 +110,7 @@ app.post('/webhook/kajabi', async (req, res) => {
           })
           .eq('id', mentorship.id);
 
-        console.log(`✅ Added 4 sessions to returning student. New balance: ${newSessionsRemaining}`);
+        console.log(`✅ Added ${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} sessions to returning student. New balance: ${newSessionsRemaining}`);
       }
 
       // Send renewal notification to student via Discord DM
@@ -137,10 +138,10 @@ app.post('/webhook/kajabi', async (req, res) => {
             body: JSON.stringify({
               content: `🎉 **Payment Processed Successfully!**\n\n` +
                 `Thank you for continuing your mentorship with **${instructorName}**!\n\n` +
-                `✅ **4 new sessions** have been added to your account.\n` +
+                `✅ **${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new sessions** have been added to your account.\n` +
                 `💬 Reach out to your instructor to schedule your next session.\n\n` +
                 `We're excited to continue working with you!\n\n` +
-                `_Having any issues? Email us at huckleberryartinc@gmail.com_`
+                `_Having any issues? ${getSupportContactString()}_`
             }),
           });
           console.log('✅ Renewal DM sent to returning student');
@@ -181,7 +182,7 @@ app.post('/webhook/kajabi', async (req, res) => {
               body: JSON.stringify({
                 content: `🔄 **Returning Student Renewed**\n\n` +
                   `<@${existingMentee.discord_id}> (${email}) has renewed their mentorship!\n\n` +
-                  `✅ 4 new sessions added to their account.\n` +
+                  `✅ ${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new sessions added to their account.\n` +
                   `📅 They're ready to schedule their next session.`
               }),
             });
@@ -196,7 +197,7 @@ app.post('/webhook/kajabi', async (req, res) => {
       try {
         await resend.emails.send({
           from: process.env.RESEND_FROM_EMAIL!,
-          to: 'huckleberryartinc@gmail.com',
+          to: CONFIG.ADMIN_EMAIL,
           subject: `🔄 Renewal: ${email}`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -213,7 +214,7 @@ app.post('/webhook/kajabi', async (req, res) => {
               <div style="background-color: #e8f5e9; padding: 15px; border-left: 4px solid #4CAF50; border-radius: 4px;">
                 <p style="margin: 0;"><strong>✅ Returning Student</strong></p>
                 <p style="margin: 10px 0 0 0;">This student already has the 1-on-1 Mentee role.</p>
-                <p style="margin: 10px 0 0 0;">✅ 4 new sessions have been added to their account.</p>
+                <p style="margin: 10px 0 0 0;">✅ ${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new sessions have been added to their account.</p>
                 <p style="margin: 10px 0 0 0;">💬 Student and instructor have been notified.</p>
               </div>
             </div>
@@ -269,7 +270,7 @@ app.post('/webhook/kajabi', async (req, res) => {
       subject: 'Welcome to Your Mentorship Program! 🎉',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h1 style="color: #5865F2;">Welcome to Your Mentorship Program!</h1>
+          <h1 style="color: #5865F2;">Welcome to ${CONFIG.ORGANIZATION_NAME}!</h1>
           
           <p style="font-size: 16px; line-height: 1.6;">
             Thank you for your purchase! We're excited to have you join our community.
@@ -312,7 +313,7 @@ app.post('/webhook/kajabi', async (req, res) => {
           <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;">
           
           <p style="font-size: 13px; color: #666;">
-            Questions? Contact us at <a href="mailto:huckleberryartinc@gmail.com">huckleberryartinc@gmail.com</a>
+            Questions? Contact us at <a href="mailto:${CONFIG.SUPPORT_EMAIL}">${CONFIG.SUPPORT_EMAIL}</a>
           </p>
         </div>
       `

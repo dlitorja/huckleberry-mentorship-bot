@@ -27,6 +27,9 @@ fly launch --no-deploy
 - Say **NO** to deploying now
 
 ### 4. Set Secrets
+
+**⚠️ IMPORTANT:** Replace values with your actual credentials!
+
 ```bash
 fly secrets set \
   DISCORD_BOT_TOKEN="your_bot_token" \
@@ -38,10 +41,18 @@ fly secrets set \
   SUPABASE_SERVICE_ROLE_KEY="your_service_key" \
   RESEND_API_KEY="your_resend_key" \
   RESEND_FROM_EMAIL="noreply@yourdomain.com" \
-  DISCORD_REDIRECT_URI="https://YOUR-APP-NAME.fly.dev/oauth/callback"
+  DISCORD_REDIRECT_URI="https://YOUR-APP-NAME.fly.dev/oauth/callback" \
+  ORGANIZATION_NAME="Your Organization Name" \
+  SUPPORT_EMAIL="support@yourdomain.com" \
+  SUPPORT_DISCORD_ID="your_support_user_id" \
+  SUPPORT_DISCORD_NAME="Your Name" \
+  ADMIN_EMAIL="admin@yourdomain.com" \
+  DEFAULT_SESSIONS_PER_PURCHASE="4"
 ```
 
 **⚠️ Replace `YOUR-APP-NAME` with your actual Fly.io app name!**
+
+**See [CONFIGURATION.md](./CONFIGURATION.md) for detailed explanation of each variable.**
 
 ### 5. Update Discord OAuth Settings
 1. Go to [Discord Developer Portal](https://discord.com/developers/applications)

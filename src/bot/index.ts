@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { supabase } from './supabaseClient.js';
+import { CONFIG, getSupportContactString } from '../config/constants.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -119,11 +120,11 @@ client.on('guildMemberAdd', async member => {
     try {
       const instructorMention = instructorInfo?.discord_id ? `<@${instructorInfo.discord_id}>` : instructorInfo?.name || 'your instructor';
       await member.send(
-        `Welcome to the Huckleberry Art Community! 🎉\n\n` +
+        `Welcome to the ${CONFIG.ORGANIZATION_NAME} Community! 🎉\n\n` +
         `You've been assigned the "1-on-1 Mentee" role -- this is needed so you can access the mentorship voice channels!\n\n` +
         `Your instructor is ${instructorMention}\n\n` +
         `Please inform them of your schedule so they can check their availability -- please include your time zone, as all our instructors and students are all over the world!\n\n` +
-        `Having any issues? Email us at huckleberryartinc@gmail.com or send a DM to Dustin (<@184416083984384005>)`
+        `Having any issues? ${getSupportContactString()}`
       );
     } catch (dmError) {
       console.log(`Could not DM ${member.user.tag}:`, dmError);

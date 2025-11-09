@@ -5,6 +5,7 @@ import express from 'express';
 import fetch from 'node-fetch';
 import { supabase } from '../bot/supabaseClient.js';
 import { notifyAdminError } from '../utils/adminNotifications.js';
+import { CONFIG, getSupportContactString } from '../config/constants.js';
 
 const router = express.Router();
 
@@ -66,7 +67,7 @@ router.get('/oauth/callback', async (req, res) => {
           <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
             <h1>❌ No Purchase Found</h1>
             <p>We couldn't find a purchase associated with your email (${userData.email}).</p>
-            <p>Please contact support at huckleberryartinc@gmail.com if you believe this is an error.</p>
+            <p>Please contact support at ${CONFIG.SUPPORT_EMAIL} if you believe this is an error.</p>
           </body>
         </html>
       `);
@@ -243,11 +244,11 @@ router.get('/oauth/callback', async (req, res) => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            content: `Welcome to the Huckleberry Art Community! 🎉\n\n` +
+            content: `Welcome to the ${CONFIG.ORGANIZATION_NAME} Community! 🎉\n\n` +
               `You've been assigned the "1-on-1 Mentee" role -- this is needed so you can access the mentorship voice channels!\n\n` +
               `Your instructor is ${instructorMention}\n\n` +
               `Please inform them of your schedule so they can check their availability -- please include your time zone, as all our instructors and students are all over the world!\n\n` +
-              `Having any issues? Email us at huckleberryartinc@gmail.com or send a DM to Dustin (<@184416083984384005>)`
+              `Having any issues? ${getSupportContactString()}`
           }),
         });
         console.log('✅ Welcome DM sent to mentee');

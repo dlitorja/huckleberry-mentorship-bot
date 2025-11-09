@@ -6,7 +6,7 @@ import { Resend } from 'resend';
 
 const ADMIN_ID = process.env.DISCORD_ADMIN_ID;
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
-const ADMIN_EMAIL = 'huckleberryartinc@gmail.com';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
 
 // Initialize Resend for admin emails
 const resend = new Resend(process.env.RESEND_API_KEY);

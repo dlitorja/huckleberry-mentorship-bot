@@ -2,6 +2,7 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
+import { CONFIG, getSupportContactString } from '../../config/constants.js';
 
 export const data = new SlashCommandBuilder()
   .setName('linkstudent')
@@ -99,12 +100,12 @@ export async function execute(interaction: ChatInputCommandInteraction) {
         : (pendingJoin as any).instructors?.name || 'your instructor';
         
       await discordUser.send(
-        `Welcome to the Huckleberry Art Community! 🎉\n\n` +
+        `Welcome to the ${CONFIG.ORGANIZATION_NAME} Community! 🎉\n\n` +
         `You've been assigned the "1-on-1 Mentee" role -- this is needed so you can access the mentorship voice channels!\n\n` +
         `Your instructor is ${instructorMention}\n\n` +
         `Please inform them of your schedule so they can check their availability -- please include your time zone, as all our instructors and students are all over the world!\n\n` +
         `Your account has been manually linked by an admin.\n\n` +
-        `Having any issues? Email us at huckleberryartinc@gmail.com or send a DM to Dustin (<@184416083984384005>)`
+        `Having any issues? ${getSupportContactString()}`
       );
       console.log('✅ Welcome DM sent to manually linked student');
     } catch (dmError) {
@@ -160,8 +161,8 @@ export async function execute(interaction: ChatInputCommandInteraction) {
             .insert({
               mentee_id: newMentee.id,
               instructor_id: pendingJoin.instructor_id,
-              sessions_remaining: 4,  // Default, adjust as needed
-              total_sessions: 4
+              sessions_remaining: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE,
+              total_sessions: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE
             });
           
           console.log('✅ Created mentorship record for manually linked student');
