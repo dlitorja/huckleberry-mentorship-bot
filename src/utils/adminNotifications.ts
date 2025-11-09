@@ -19,10 +19,11 @@ interface PurchaseNotification {
 }
 
 interface ErrorNotification {
-  type: 'email_failed' | 'role_assignment_failed' | 'database_error' | 'webhook_error';
+  type: 'email_failed' | 'role_assignment_failed' | 'database_error' | 'webhook_error' | 'cancellation_webhook_error';
   message: string;
   details?: any;
   studentEmail?: string;
+  studentDiscordId?: string;
 }
 
 interface FailedJoinAlert {

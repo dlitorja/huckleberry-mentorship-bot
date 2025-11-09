@@ -68,6 +68,14 @@ app.post('/webhook/kajabi', async (req, res) => {
       return res.status(404).json({ error: 'Offer not found in database' });
     }
 
+    // Get instructor name for personalized messages
+    const instructorName = (offerData as any).instructors?.name || 'your instructor';
+
+    // Extract price from webhook payload (if available)
+    const offerPrice = req.body.payment_transaction?.amount_paid_decimal || 
+                       req.body.payload?.amount_paid_decimal || 
+                       req.body.order?.order_items?.[0]?.unit_cost_decimal;
+
     // Check if this is a returning/existing student
     const { data: existingMentee, error: menteeCheckError } = await supabase
       .from('mentees')
@@ -277,9 +285,6 @@ app.post('/webhook/kajabi', async (req, res) => {
     // Generate Discord OAuth invite link
     const inviteLink = `https://discord.com/api/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.DISCORD_REDIRECT_URI!)}&response_type=code&scope=identify%20email%20guilds.join`;
 
-    // Get instructor name for personalized email
-    const instructorName = (offerData as any).instructors?.name || 'your instructor';
-
     // Send email via Resend
     const { data: emailData, error: emailError } = await resend.emails.send({
       from: process.env.RESEND_FROM_EMAIL!,
@@ -351,11 +356,6 @@ app.post('/webhook/kajabi', async (req, res) => {
     }
 
     console.log('Email sent successfully:', emailData);
-
-    // Extract price from webhook payload (if available)
-    const offerPrice = req.body.payment_transaction?.amount_paid_decimal || 
-                       req.body.payload?.amount_paid_decimal || 
-                       req.body.order?.order_items?.[0]?.unit_cost_decimal;
 
     // Notify admin of successful purchase
     await notifyAdminPurchase({
