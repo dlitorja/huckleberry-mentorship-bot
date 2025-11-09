@@ -20,6 +20,8 @@ export const data = new SlashCommandBuilder()
   );
 
 export async function execute(interaction: ChatInputCommandInteraction) {
+  await interaction.deferReply({ ephemeral: true });
+
   const student = interaction.options.getUser('student', true);
   const instructorId = interaction.user.id;
   const amount = interaction.options.getInteger('amount', true);
@@ -32,10 +34,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     .single();
 
   if (error || !data) {
-    await interaction.reply({
-      content: `Could not find a mentorship record for ${student.tag}.`,
-      ephemeral: true,
-    });
+    await interaction.editReply(`Could not find a mentorship record for ${student.tag}.`);
     return;
   }
 
@@ -48,15 +47,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     .eq('id', data.id);
 
   if (updateError) {
-    await interaction.reply({
-      content: `Failed to update sessions for ${student.tag}.`,
-      ephemeral: true,
-    });
+    await interaction.editReply(`Failed to update sessions for ${student.tag}.`);
     return;
   }
 
-  await interaction.reply({
-    content: `${student.tag} now has ${newRemaining}/${newTotal} sessions.`,
-    ephemeral: false,
-  });
+  await interaction.editReply(`${student.tag} now has ${newRemaining}/${newTotal} sessions.`);
 }

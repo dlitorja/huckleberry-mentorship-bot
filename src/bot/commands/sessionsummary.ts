@@ -14,6 +14,8 @@ export const data = new SlashCommandBuilder()
   );
 
 export async function execute(interaction: ChatInputCommandInteraction) {
+  await interaction.deferReply({ ephemeral: false });
+
   const student = interaction.options.getUser('student', true);
   const instructorId = interaction.user.id;
 
@@ -25,15 +27,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     .single();
 
   if (error || !data) {
-    await interaction.reply({
-      content: `Could not find a mentorship record for ${student.tag}.`,
-      ephemeral: true,
-    });
+    await interaction.editReply(`Could not find a mentorship record for ${student.tag}.`);
     return;
   }
 
-  await interaction.reply({
-    content: `${student} – ${data.sessions_remaining}/${data.total_sessions} sessions remaining.`,
-    ephemeral: false,
-  });
+  await interaction.editReply(`${student} – ${data.sessions_remaining}/${data.total_sessions} sessions remaining.`);
 }

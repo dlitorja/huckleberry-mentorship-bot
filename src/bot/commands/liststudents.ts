@@ -8,6 +8,8 @@ export const data = new SlashCommandBuilder()
   .setDescription('List all your students and remaining sessions.');
 
 export async function execute(interaction: ChatInputCommandInteraction) {
+  await interaction.deferReply({ ephemeral: true });
+
   const instructorId = interaction.user.id;
 
   const { data, error } = await supabase
@@ -16,10 +18,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     .eq('instructor_id', instructorId);
 
   if (error || !data || data.length === 0) {
-    await interaction.reply({
-      content: 'No students found.',
-      ephemeral: true,
-    });
+    await interaction.editReply('No students found.');
     return;
   }
 
@@ -29,8 +28,5 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     )
     .join('\n');
 
-  await interaction.reply({
-    content: message,
-    ephemeral: true,
-  });
+  await interaction.editReply(message);
 }
