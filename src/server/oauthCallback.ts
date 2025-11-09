@@ -65,7 +65,7 @@ router.get('/oauth/callback', async (req, res) => {
           <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
             <h1>❌ No Purchase Found</h1>
             <p>We couldn't find a purchase associated with your email (${userData.email}).</p>
-            <p>Please contact support if you believe this is an error.</p>
+            <p>Please contact support at huckleberryartinc@gmail.com if you believe this is an error.</p>
           </body>
         </html>
       `);
