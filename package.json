@@ -1,4 +1,10 @@
 {
+  "name": "huckleberry-mentorship-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "ts-node src/bot/index.ts"
+  },
   "dependencies": {
     "@discordjs/builders": "^1.13.0",
     "@discordjs/rest": "^2.6.0",
@@ -6,5 +12,9 @@
     "discord-api-types": "^0.38.32",
     "discord.js": "^14.24.2",
     "dotenv": "^17.2.3"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2",
+    "typescript": "^5.1.6"
   }
 }

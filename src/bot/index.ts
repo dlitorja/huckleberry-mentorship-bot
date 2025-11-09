@@ -1,86 +1,83 @@
 // src/bot/index.ts
 
 import 'dotenv/config';
-import { Client, GatewayIntentBits, Interaction } from 'discord.js';
+import { Client, GatewayIntentBits } from 'discord.js';
 import { createClient } from '@supabase/supabase-js';
 
-// -----------------
-// Initialize Discord client
-// -----------------
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-
-// -----------------
-// Initialize Supabase client
-// -----------------
+// Supabase setup
 const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// -----------------
-// Bot ready event
-// -----------------
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
+});
+
 client.once('ready', () => {
   console.log(`Logged in as ${client.user?.tag}!`);
 });
 
-// -----------------
-// Handle slash commands
-// -----------------
-client.on('interactionCreate', async (interaction: Interaction) => {
-  if (!interaction.isCommand()) return;
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isChatInputCommand()) return;
 
-  if (interaction.commandName === 'decrement') {
-    const user = interaction.options.getUser('student', true);
+  if (interaction.commandName === 'session') {
+    const student = interaction.options.getUser('student', true);
+    const instructorId = interaction.user.id;
 
-    // Defer reply immediately to avoid timeout
-    await interaction.deferReply({ ephemeral: true });
+    // Fetch the mentorship record for this student–instructor pair
+    const { data, error } = await supabase
+      .from('mentorships')
+      .select('id, remaining_sessions')
+      .eq('student_discord_id', student.id)
+      .eq('instructor_discord_id', instructorId)
+      .single();
 
-    try {
-      // Fetch mentorship data from Supabase
-      const { data, error } = await supabase
-        .from('mentorships')
-        .select('*')
-        .eq('discord_id', user.id)
-        .single();
-
-      if (error || !data) {
-        await interaction.editReply({ content: `Student not found in the database.` });
-        return;
-      }
-
-      const remaining = data.remaining_sessions - 1;
-
-      // Update Supabase
-      await supabase
-        .from('mentorships')
-        .update({ remaining_sessions: remaining })
-        .eq('discord_id', user.id);
-
-      // DM student if 1 session left
-      if (remaining === 1) {
-        try {
-          await user.send(
-            `You have 1 remaining mentorship session. Please notify your instructor if you wish to continue or cancel your subscription.`
-          );
-        } catch (err) {
-          console.warn('Could not DM user:', err);
-        }
-      }
-
-      // Edit deferred reply with updated count
-      await interaction.editReply({
-        content: `${user.username} now has ${remaining} session(s) remaining.`
-      });
-    } catch (err) {
-      console.error(err);
-      await interaction.editReply({ content: `An error occurred while updating sessions.` });
+    if (error) {
+      console.error('Supabase error:', error);
     }
+
+    if (error || !data) {
+      await interaction.reply({
+        content: `Could not find a mentorship record for ${student.tag} with you.`,
+        ephemeral: true,
+      });
+      return;
+    }
+
+    // Decrement remaining sessions
+    const newCount = Math.max(0, data.remaining_sessions - 1);
+    const { error: updateError } = await supabase
+      .from('mentorships')
+      .update({ remaining_sessions: newCount })
+      .eq('id', data.id);
+
+    if (updateError) {
+      console.error('Supabase error:', updateError);
+    }
+
+    if (newCount === 0) {
+      await interaction.reply({
+        content: `${student.tag} has no remaining sessions with you.`,
+        ephemeral: true,
+      });
+      return;
+    }
+
+    await interaction.reply({
+      content: `Updated ${student.tag} for you. Remaining sessions: ${newCount}.`,
+      ephemeral: false,
+    });
   }
 });
 
-// -----------------
-// Login the bot
-// -----------------
-console.log('Bot token length:', process.env.DISCORD_BOT_TOKEN?.length);
+if (!process.env.DISCORD_BOT_TOKEN) {
+  console.error('Error: DISCORD_BOT_TOKEN is not set.');
+  process.exit(1);
+}
+
 client.login(process.env.DISCORD_BOT_TOKEN);

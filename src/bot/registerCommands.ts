@@ -1,32 +1,30 @@
-import { REST } from '@discordjs/rest';
-import { Routes } from 'discord-api-types/v9';
-import { SlashCommandBuilder } from '@discordjs/builders';
+// src/bot/registerCommands.ts
 import 'dotenv/config';
+import { REST } from '@discordjs/rest';
+import { Routes } from 'discord.js';
+import { SlashCommandBuilder } from '@discordjs/builders';
 
 const commands = [
   new SlashCommandBuilder()
-    .setName('decrement')
-    .setDescription('Decrement a student’s remaining mentorship sessions')
+    .setName('session')
+    .setDescription('Decrement a student’s remaining mentorship session')
     .addUserOption(option =>
       option
         .setName('student')
-        .setDescription('The student to decrement')
+        .setDescription('The student to update')
         .setRequired(true)
     )
-    .toJSON()
+    .toJSON(),
 ];
 
-const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_BOT_TOKEN!);
+const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN!);
 
 (async () => {
   try {
     console.log('Started refreshing application (/) commands.');
 
     await rest.put(
-      Routes.applicationGuildCommands(
-        process.env.DISCORD_CLIENT_ID!,
-        process.env.DISCORD_GUILD_ID!
-      ),
+      Routes.applicationCommands(process.env.DISCORD_CLIENT_ID!),
       { body: commands }
     );
 
