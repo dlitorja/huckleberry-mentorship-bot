@@ -87,3 +87,7 @@ temp/
 *.sqlite
 *.sqlite3
 
+# Supabase
+supabase/
+backup.sql
+
