@@ -4,15 +4,21 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/bot/index.ts",
-    "register": "tsx src/bot/registerCommands.ts"
+    "register": "tsx src/bot/registerCommands.ts",
+    "webhook": "tsx src/server/webhookServer.ts"
   },
   "dependencies": {
     "@discordjs/builders": "^1.13.0",
     "@discordjs/rest": "^2.6.0",
     "@supabase/supabase-js": "^2.80.0",
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
     "discord-api-types": "^0.38.32",
     "discord.js": "^14.24.2",
-    "dotenv": "^17.2.3"
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "node-fetch": "^2.7.0",
+    "resend": "^6.4.2"
   },
   "devDependencies": {
     "ts-node": "^10.9.2",

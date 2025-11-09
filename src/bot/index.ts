@@ -5,6 +5,7 @@ import { Client, GatewayIntentBits, ChatInputCommandInteraction } from 'discord.
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { supabase } from './supabaseClient.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,6 +18,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers,
   ],
 });
 
@@ -65,6 +67,56 @@ client.on('interactionCreate', async interaction => {
     } else {
       await interaction.reply('An error occurred while handling your command.');
     }
+  }
+});
+
+// --------------------
+// Guild member add handler
+// --------------------
+client.on('guildMemberAdd', async member => {
+  console.log(`New member joined: ${member.user.tag} (${member.user.id})`);
+
+  try {
+    // Check if this user has a pending join (from Kajabi purchase)
+    const { data: pendingJoin, error } = await supabase
+      .from('pending_joins')
+      .select('*')
+      .eq('discord_user_id', member.user.id)
+      .is('joined_at', null)
+      .single();
+
+    if (error || !pendingJoin) {
+      console.log(`No pending join found for ${member.user.tag}`);
+      return;
+    }
+
+    // Find the "1-on-1 Mentee" role
+    const role = member.guild.roles.cache.find(r => r.name === '1-on-1 Mentee');
+
+    if (!role) {
+      console.error('Could not find "1-on-1 Mentee" role');
+      return;
+    }
+
+    // Assign the role
+    await member.roles.add(role);
+    console.log(`Assigned "1-on-1 Mentee" role to ${member.user.tag}`);
+
+    // Update pending join to mark as completed
+    await supabase
+      .from('pending_joins')
+      .update({ joined_at: new Date().toISOString() })
+      .eq('id', pendingJoin.id);
+
+    // Welcome message (optional)
+    try {
+      await member.send(`Welcome to the community! You've been assigned the "1-on-1 Mentee" role. 🎉`);
+    } catch (dmError) {
+      console.log(`Could not DM ${member.user.tag}:`, dmError);
+    }
+
+  } catch (error) {
+    console.error('Error handling new member:', error);
   }
 });
 
