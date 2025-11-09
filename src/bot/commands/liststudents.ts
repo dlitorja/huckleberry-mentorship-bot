@@ -27,8 +27,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
   const { data, error } = await supabase
     .from('mentorships')
-    .select('mentee_id, sessions_remaining, total_sessions, last_session_date, mentees(discord_id)')
-    .eq('instructor_id', instructorData.id);
+    .select('mentee_id, sessions_remaining, total_sessions, last_session_date, status, mentees(discord_id)')
+    .eq('instructor_id', instructorData.id)
+    .eq('status', 'active');  // Only show active mentorships
 
   if (error || !data || data.length === 0) {
     console.error('Mentorships lookup error:', error);

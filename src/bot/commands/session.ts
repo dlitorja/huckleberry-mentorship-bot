@@ -85,9 +85,10 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   // Lookup mentorship record
   const { data, error } = await supabase
     .from('mentorships')
-    .select('id, sessions_remaining, total_sessions')
+    .select('id, sessions_remaining, total_sessions, status')
     .eq('mentee_id', menteeData.id)
     .eq('instructor_id', instructorData.id)
+    .eq('status', 'active')  // Only update active mentorships
     .single();
 
   if (error) {

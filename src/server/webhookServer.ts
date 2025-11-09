@@ -87,13 +87,13 @@ app.post('/webhook/kajabi', async (req, res) => {
     if (existingMentee && existingMentee.discord_id) {
       console.log(`🔄 Returning student detected: ${email}`);
 
-      // Find their mentorship with this instructor
+      // Find their mentorship with this instructor (check both active and ended)
       const { data: mentorship, error: mentorshipError } = await supabase
         .from('mentorships')
-        .select('id, sessions_remaining, total_sessions')
+        .select('id, sessions_remaining, total_sessions, status')
         .eq('mentee_id', existingMentee.id)
         .eq('instructor_id', offerData.instructor_id)
-        .single();
+        .maybeSingle();
 
       if (mentorshipError || !mentorship) {
         // They exist but don't have a mentorship with THIS instructor (edge case)
@@ -104,22 +104,62 @@ app.post('/webhook/kajabi', async (req, res) => {
             mentee_id: existingMentee.id,
             instructor_id: offerData.instructor_id,
             sessions_remaining: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE,
-            total_sessions: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE
+            total_sessions: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE,
+            status: 'active'
           });
       } else {
         // Update sessions: Add to their current balance (allows banking)
         const newSessionsRemaining = mentorship.sessions_remaining + CONFIG.DEFAULT_SESSIONS_PER_PURCHASE;
         const newTotalSessions = Math.max(mentorship.total_sessions, newSessionsRemaining);
+        const wasEnded = mentorship.status === 'ended';
 
         await supabase
           .from('mentorships')
           .update({
             sessions_remaining: newSessionsRemaining,
-            total_sessions: newTotalSessions
+            total_sessions: newTotalSessions,
+            status: 'active',  // Reactivate if it was ended
+            ended_at: null,    // Clear ended timestamp
+            end_reason: null   // Clear end reason
           })
           .eq('id', mentorship.id);
 
         console.log(`✅ Added ${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} sessions to returning student. New balance: ${newSessionsRemaining}`);
+
+        // If mentorship was ended, re-add the Discord role
+        if (wasEnded) {
+          console.log('🔄 Reactivating ended mentorship - re-adding Discord role');
+          try {
+            // Get guild roles to find the "1-on-1 Mentee" role ID
+            const rolesResponse = await fetch(
+              `https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/roles`,
+              {
+                headers: {
+                  Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+                },
+              }
+            );
+
+            const roles: any[] = await rolesResponse.json();
+            const menteeRole = roles.find(role => role.name === '1-on-1 Mentee');
+
+            if (menteeRole) {
+              // Add the role back
+              await fetch(
+                `https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/members/${existingMentee.discord_id}/roles/${menteeRole.id}`,
+                {
+                  method: 'PUT',
+                  headers: {
+                    Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+                  },
+                }
+              );
+              console.log('✅ Re-added 1-on-1 Mentee role to returning student');
+            }
+          } catch (roleError) {
+            console.log('Could not re-add role to returning student:', roleError);
+          }
+        }
       }
 
       // Send renewal notification to student via Discord DM

@@ -89,9 +89,10 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   // Get mentorship ID
   const { data: mentorshipData, error: mentorshipError } = await supabase
     .from('mentorships')
-    .select('id')
+    .select('id, status')
     .eq('mentee_id', menteeData.id)
     .eq('instructor_id', instructorData.id)
+    .eq('status', 'active')  // Only add links to active mentorships
     .single();
 
   if (mentorshipError || !mentorshipData) {

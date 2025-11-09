@@ -47,6 +47,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   // Determine mentorship ID
   let mentorshipId: string;
 
+  // Check if user is admin (admin can view anyone)
+  const isAdmin = userDiscordId === process.env.DISCORD_ADMIN_ID;
+
   if (instructorData) {
     // User is an instructor - get their mentorship with this student
     const { data: mentorshipData, error: mentorshipError } = await supabase
@@ -72,6 +75,21 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
     if (mentorshipError || !mentorshipData) {
       await interaction.editReply('Could not find your mentorship record.');
+      return;
+    }
+    mentorshipId = mentorshipData.id;
+  } else if (isAdmin) {
+    // Admin viewing any student - get their most recent mentorship
+    const { data: mentorshipData, error: mentorshipError } = await supabase
+      .from('mentorships')
+      .select('id')
+      .eq('mentee_id', menteeData.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (mentorshipError || !mentorshipData) {
+      await interaction.editReply(`Could not find a mentorship record for ${student.tag}.`);
       return;
     }
     mentorshipId = mentorshipData.id;

@@ -24,9 +24,11 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   // Fetch all mentorships with instructor and mentee details
+  // Only show active mentorships (exclude ended ones)
   const { data: mentorships, error } = await supabase
     .from('mentorships')
-    .select('sessions_remaining, total_sessions, last_session_date, instructors(discord_id), mentees(discord_id)')
+    .select('sessions_remaining, total_sessions, last_session_date, status, instructors(discord_id), mentees(discord_id)')
+    .eq('status', 'active')
     .order('instructors(discord_id)');
 
   if (error) {
