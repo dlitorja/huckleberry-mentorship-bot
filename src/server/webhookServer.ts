@@ -90,7 +90,7 @@ app.post('/webhook/kajabi', async (req, res) => {
       // Find their mentorship with this instructor (check both active and ended)
       const { data: mentorship, error: mentorshipError } = await supabase
         .from('mentorships')
-        .select('id, sessions_remaining, total_sessions, status')
+        .select('id, sessions_remaining, total_sessions, status, returned_after_end')
         .eq('mentee_id', existingMentee.id)
         .eq('instructor_id', offerData.instructor_id)
         .maybeSingle();
@@ -120,7 +120,8 @@ app.post('/webhook/kajabi', async (req, res) => {
             total_sessions: newTotalSessions,
             status: 'active',  // Reactivate if it was ended
             ended_at: null,    // Clear ended timestamp
-            end_reason: null   // Clear end reason
+            end_reason: null,  // Clear end reason
+            returned_after_end: wasEnded ? true : mentorship.returned_after_end  // Track if they returned
           })
           .eq('id', mentorship.id);
 
