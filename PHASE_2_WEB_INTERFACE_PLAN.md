@@ -446,6 +446,541 @@ mentorship-images/
 
 ---
 
+## 🗑️ **Image Lifecycle & Purge System**
+
+### **Automatic Storage Cleanup for Inactive Alumni**
+
+**Purpose:** Free up storage by purging images from past students who haven't returned
+
+**Policy:**
+- **Active students:** Images kept indefinitely ✅
+- **Alumni (< 16 months):** Images kept (they might return soon) ✅
+- **Alumni (16-17 months):** Warning emails sent ⚠️
+- **Alumni (18+ months):** Images purged, free up storage 🗑️
+
+**Chosen Retention:** **18 months** (balanced approach)
+
+### **Implementation Plan:**
+
+#### **Database Schema:**
+
+```sql
+-- Track image purge status
+CREATE TABLE image_purge_schedule (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  mentee_id UUID REFERENCES mentees(id) NOT NULL,
+  mentorship_id UUID REFERENCES mentorships(id),
+  
+  -- Purge timeline
+  eligible_for_purge_at TIMESTAMP WITH TIME ZONE, -- When they become eligible (24mo after end)
+  warning_sent_at TIMESTAMP WITH TIME ZONE,        -- When we sent warning email
+  purge_executed_at TIMESTAMP WITH TIME ZONE,      -- When images were deleted
+  
+  -- Stats
+  images_count INTEGER,                            -- How many images will be purged
+  storage_size_mb DECIMAL,                         -- MB to be freed
+  
+  -- Status
+  status TEXT DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'warned', 'purged', 'cancelled')),
+  cancelled_reason TEXT,                           -- If they renewed, mark cancelled
+  
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+```
+
+#### **Monthly Cron Job (Automated):**
+
+Run via Supabase Functions or GitHub Actions once per month:
+
+```typescript
+// 1. Send warning emails (2 months before purge = 16 months after end)
+const studentsToWarn = await getAlumni({
+  monthsSinceEnded: 16,
+  hasImages: true,
+  warningNotSent: true
+});
+
+for (const student of studentsToWarn) {
+  await sendPurgeWarningEmail(student);
+  // Mark warning sent
+}
+
+// 2. Execute purge (18 months after end)
+const studentsToPurge = await getAlumni({
+  monthsSinceEnded: 18,
+  warningSent: true,
+  hasImages: true
+});
+
+for (const student of studentsToPurge) {
+  await purgeStudentImages(student);
+  // Log purge completed
+}
+```
+
+#### **Warning Email Template:**
+
+**Subject:** Action Required: Download Your Mentorship Images 📸
+
+**Body:**
+```html
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+  <h1>📸 Your Mentorship Images</h1>
+  
+  <p>Hi [Name],</p>
+  
+  <p>We hope you're doing well on your art journey! 🎨</p>
+  
+  <p>This is a friendly heads-up that you have <strong>[X] images</strong> 
+  from your mentorship with <strong>[Instructor Name]</strong> stored in our system 
+  from [Date Range].</p>
+  
+  <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; 
+              margin: 20px 0; border-left: 4px solid #ffc107;">
+    <p style="margin: 0;"><strong>⏰ Important:</strong></p>
+    <p style="margin: 10px 0 0 0;">
+      These images will be automatically deleted on <strong>[Purge Date]</strong> 
+      (in 2 months) as part of our data retention policy.
+    </p>
+  </div>
+  
+  <p><strong>Want to keep them?</strong> Simply download your images before the purge date:</p>
+  
+  <div style="text-align: center; margin: 30px 0;">
+    <a href="https://app.huckleberry.art/download-archive/[token]" 
+       style="display: inline-block; padding: 15px 32px; background-color: #5865F2; 
+              color: white; text-decoration: none; border-radius: 5px; 
+              font-size: 16px; font-weight: bold;">
+      Download All My Images
+    </a>
+  </div>
+  
+  <p style="font-size: 14px; color: #666;">
+    Your download includes:
+  </p>
+  <ul style="font-size: 14px; color: #666;">
+    <li>All images you uploaded during your mentorship</li>
+    <li>Session notes and dates</li>
+    <li>Resource links</li>
+    <li>Organized by session in a ZIP file</li>
+  </ul>
+  
+  <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
+  
+  <p style="font-size: 13px; color: #999;">
+    <strong>Why are we doing this?</strong><br>
+    We maintain free storage for all active students, but need to manage data 
+    for our alumni to keep the service sustainable. Thank you for understanding!
+  </p>
+  
+  <p style="font-size: 13px; color: #999;">
+    Questions? Email us at support@huckleberry.art
+  </p>
+</div>
+```
+
+**Tone:** Helpful and matter-of-fact, not salesy
+
+---
+
+### **Download Archive Feature:**
+
+**Endpoint:** `GET /download-archive/[token]`
+
+**What It Does:**
+1. Validates token (time-limited, one-time use)
+2. Fetches all student's images
+3. Creates ZIP file with folder structure:
+   ```
+   StudentName_Mentorship_Archive/
+   ├── Session_2025-06-15/
+   │   ├── notes.txt
+   │   ├── image_001.jpg
+   │   ├── image_002.jpg
+   │   └── links.txt
+   ├── Session_2025-07-01/
+   │   ├── notes.txt
+   │   └── image_001.jpg
+   └── README.txt (summary of mentorship)
+   ```
+4. Streams ZIP download to browser
+5. Marks download as completed (prevents re-download if already saved)
+
+---
+
+### **Purge Process:**
+
+**When 24 months hit:**
+```typescript
+async function purgeStudentImages(menteeId: string, mentorshipId: string) {
+  // 1. Get all images for this mentorship
+  const { data: images } = await supabase
+    .from('session_images')
+    .select('image_url, thumbnail_url')
+    .eq('mentorship_id', mentorshipId);
+  
+  // 2. Delete from Supabase Storage
+  for (const img of images) {
+    await supabase.storage
+      .from('mentorship-images')
+      .remove([img.image_url, img.thumbnail_url]);
+  }
+  
+  // 3. Delete database records
+  await supabase
+    .from('session_images')
+    .delete()
+    .eq('mentorship_id', mentorshipId);
+  
+  // 4. Log purge
+  await supabase
+    .from('image_purge_schedule')
+    .update({ 
+      status: 'purged',
+      purge_executed_at: new Date().toISOString() 
+    })
+    .eq('mentorship_id', mentorshipId);
+  
+  console.log(`✅ Purged images for mentorship ${mentorshipId}`);
+}
+```
+
+---
+
+### **Cancel Purge on Return:**
+
+When alumni renews (webhook):
+```typescript
+// If they were scheduled for purge, cancel it
+await supabase
+  .from('image_purge_schedule')
+  .update({
+    status: 'cancelled',
+    cancelled_reason: 'Student renewed mentorship'
+  })
+  .eq('mentorship_id', mentorship.id)
+  .eq('status', 'scheduled');
+
+console.log('Cancelled image purge - student returned!');
+```
+
+---
+
+## ⚙️ **Configuration Options**
+
+### **Environment Variables:**
+
+```env
+# Image purge settings
+IMAGE_PURGE_MONTHS=18           # Delete after 18 months (1.5 years)
+IMAGE_PURGE_WARNING_MONTHS=16   # Warn at 16 months (2 months before)
+IMAGE_PURGE_ENABLED=true        # Enable/disable purge system
+```
+
+**Flexibility:**
+- Currently set to 18 months (your choice)
+- Can adjust to 12, 24, or any other value
+- Can disable entirely if not needed
+
+---
+
+## 📊 **Storage Impact Analysis**
+
+### **With Purge System:**
+
+**Scenario:**
+- 10 new students per year
+- Each uploads average 50 images (across 4 sessions)
+- 50 images × 500KB = 25MB per student
+
+**Without Purge:**
+- Year 1: 10 students = 250MB
+- Year 2: 20 students = 500MB
+- Year 3: 30 students = 750MB
+- Year 4: 40 students = 1GB ⚠️ (hitting limit)
+
+**With 18-Month Purge:**
+- Year 1: 10 students = 250MB
+- Year 2: 20 students = 500MB (Year 1 students still within 18mo)
+- Year 3: 25 students = 625MB (5 purged from Year 1)
+- Year 4: 25 students = 625MB (10 purged total)
+- **Stay around 600-650MB!** ✅
+
+**Benefits:**
+- ✅ Stay in free tier indefinitely
+- ✅ More aggressive cleanup than 24 months
+- ✅ Still very fair (1.5 years is generous)
+- ✅ Better storage optimization
+- ✅ Only keep images for active + recent alumni
+- ✅ Automated with warnings
+
+---
+
+## 🎯 **Admin Dashboard (Phase 2)**
+
+### **Purge Management Page:**
+
+**URL:** `app.huckleberry.art/admin/storage`
+
+**Features:**
+```
+┌─────────────────────────────────────────┐
+│  🗄️ Storage Management                  │
+├─────────────────────────────────────────┤
+│  📊 Current Usage: 487 MB / 1 GB (49%)  │
+│  ━━━━━━━━━━━                   [49%]   │
+│                                         │
+│  📅 Upcoming Purges (Next 3 Months)     │
+│  ┌──────────────────────────────────┐  │
+│  │ Feb 15: 3 students (75MB)        │  │
+│  │ Mar 1: 2 students (50MB)         │  │
+│  │ Mar 20: 1 student (18MB)         │  │
+│  └──────────────────────────────────┘  │
+│                                         │
+│  ⚠️ Warning Emails (Sent This Month)   │
+│  • @SarahLee - Sent Nov 1              │
+│  • @JohnSmith - Sent Nov 5             │
+│                                         │
+│  🎯 Actions:                            │
+│  [View Purge Schedule] [Cancel Purge]  │
+│  [Send Manual Warning] [Adjust Policy] │
+└─────────────────────────────────────────┘
+```
+
+**Manual Controls:**
+- View all scheduled purges
+- Cancel purge for specific student (if they request)
+- Send warning email early
+- Adjust purge timeline
+
+---
+
+## 🔔 **Notification Timeline**
+
+```
+Month 0:  Student completes mentorship, ends subscription
+          ↓
+Month 16: Warning email sent ⚠️
+          "Your images will be deleted in 2 months"
+          [Download Archive] button
+          ↓
+Month 17: Reminder email (1 month left) ⚠️
+          "Last chance to download your images!"
+          ↓
+Month 18: Images purged 🗑️
+          Storage freed
+          Admin notified of purge completion
+```
+
+**Grace Period:** 2 months of warnings is generous!  
+**Total Retention:** 18 months (1.5 years)
+
+---
+
+## 📧 **Second Warning Email (1 Month Before)**
+
+**Subject:** Last Chance: Download Your Images (Purge in 30 Days)
+
+**Body:**
+```html
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+  <h1 style="color: #dc3545;">⏰ Final Reminder</h1>
+  
+  <p>Hi [Name],</p>
+  
+  <p>We sent you a reminder last month, but wanted to make sure you saw it!</p>
+  
+  <p>Your <strong>[X] images</strong> from your mentorship will be 
+  <strong style="color: #dc3545;">permanently deleted on [Date]</strong> 
+  (in 30 days).</p>
+  
+  <div style="text-align: center; margin: 30px 0;">
+    <a href="https://app.huckleberry.art/download-archive/[token]" 
+       style="display: inline-block; padding: 15px 32px; background-color: #dc3545; 
+              color: white; text-decoration: none; border-radius: 5px; 
+              font-size: 16px; font-weight: bold;">
+      Download My Images Now
+    </a>
+  </div>
+  
+  <p style="font-size: 13px; color: #666;">
+    This is your last chance to save your work! The download link expires on [Date].
+  </p>
+</div>
+```
+
+---
+
+## 🛡️ **Safety Features**
+
+### **Prevent Accidental Purges:**
+
+1. **Multiple Warnings:** 2 months, then 1 month before
+2. **Easy Download:** One-click ZIP archive
+3. **Cancel on Return:** If they renew, purge cancelled automatically
+4. **Admin Override:** Can cancel purge manually
+5. **Purge Log:** Track what was deleted when (for support requests)
+
+### **What If Student Requests Extension?**
+
+**Before Purge (Student Asks for More Time):**
+- Can manually cancel purge for them
+- Extend retention period if needed
+- **Inform them:** "Renewing your mentorship resets the retention period to 18 months from today!"
+- This gently suggests renewal without being pushy
+- Student decides: extend once, or renew and keep images indefinitely
+
+**Response Template:**
+```
+Hi [Name]!
+
+I can extend your image retention - no problem! Your images won't be 
+deleted for now.
+
+Just FYI: If you ever decide to renew your mentorship, your images 
+would automatically be preserved indefinitely (as long as you're an 
+active student). The retention clock resets with each renewal.
+
+Let me know if you have any questions!
+```
+
+**After Purge (Student Asks to Restore):**
+- Images are gone (can't restore - be clear about this)
+- Session notes and text are preserved ✅
+- Explain 18-month policy with 2-month warnings
+- If they renew: fresh start with new images
+
+---
+
+## 📊 **Purge Analytics**
+
+Track storage savings:
+
+```sql
+-- Storage freed over time
+SELECT 
+  DATE_TRUNC('month', purge_executed_at) AS month,
+  SUM(storage_size_mb) AS mb_freed,
+  COUNT(*) AS students_purged
+FROM image_purge_schedule
+WHERE status = 'purged'
+GROUP BY DATE_TRUNC('month', purge_executed_at)
+ORDER BY month DESC;
+```
+
+---
+
+## 🎯 **Retention Settings**
+
+### **Option A: 24 Months (Generous)**
+- **Pros:** Very fair to students, plenty of time to return
+- **Cons:** More storage usage
+- **Best for:** You have storage headroom
+
+### **Option B: 18 Months (Balanced) ✅ CHOSEN**
+- **Pros:** Still generous, saves more storage
+- **Cons:** Less time for long-term returns
+- **Best for:** Moderate storage concerns
+- **Why Chosen:** Balances fairness with storage efficiency
+
+### **Option C: 12 Months (Aggressive)**
+- **Pros:** Maximum storage savings
+- **Cons:** May feel short to some users
+- **Best for:** Limited storage budget
+
+**Your Choice:** **18 months** - Fair to students while optimizing storage costs
+
+---
+
+## 🔄 **Complete Lifecycle**
+
+```
+Active Student → Images stored indefinitely
+     ↓
+Mentorship Ends → Keep images (alumni status)
+     ↓
+16 months → Warning email #1 (2 months notice)
+     ↓
+17 months → Warning email #2 (final warning)
+     ↓
+18 months → Purge images
+     ↓
+Storage freed!
+
+───── OR ─────
+
+Student Returns (anytime) → Cancel purge, keep images ✅
+```
+
+**Timeline:** 18 months total = 1.5 years retention
+
+---
+
+## ✅ **Implementation Checklist**
+
+### **Phase 2 (Web Interface):**
+- [ ] Build download archive feature
+- [ ] Create purge management dashboard
+- [ ] Implement warning email templates
+- [ ] Build purge execution logic
+
+### **Phase 3 (Automation):**
+- [ ] Set up monthly cron job (Supabase Function or GitHub Actions)
+- [ ] Automated warning emails (16 months)
+- [ ] Automated reminder emails (17 months)
+- [ ] Automated purge execution (18 months)
+- [ ] Admin notification after purges
+
+### **Configuration:**
+- [ ] Add purge settings to environment variables (18 months chosen)
+- [ ] Set IMAGE_PURGE_MONTHS=18, IMAGE_PURGE_WARNING_MONTHS=16
+- [ ] Test with dummy data
+
+---
+
+## 💡 **Benefits**
+
+### **For Your Business:**
+- ✅ Stay within free storage tier forever
+- ✅ Predictable, manageable storage costs
+- ✅ Professional data retention policy
+- ✅ Automated (minimal manual work)
+
+### **For Students:**
+- ✅ 18 months of free storage (very generous)
+- ✅ Multiple warnings before deletion (2 months notice)
+- ✅ Easy one-click download
+- ✅ Fair and transparent policy
+
+### **For Active Students:**
+- ✅ Never affected (images kept indefinitely)
+- ✅ No storage worries
+- ✅ Encourages staying active
+
+---
+
+## 📝 **Purge Policy (User-Facing)**
+
+Add to your terms/FAQ:
+
+> **Image Storage Policy**
+> 
+> - **Active students:** Your images are stored securely with unlimited retention
+> - **Past students:** Images are kept for 18 months after your mentorship ends
+> - **Warnings:** We'll email you 2 months before deletion (at 16 months)
+> - **Download:** One-click archive download of all your images
+> - **Return:** If you renew your mentorship, your images are kept indefinitely
+>
+> This policy allows us to provide free image hosting while maintaining a sustainable service.
+
+---
+
+**Added to Phase 2 plan!** This ensures your storage stays manageable while being very fair to students. 🎯
+
+Want me to commit this updated plan? 🚀
+
+---
+
 ## 🚀 **Deployment Plan**
 
 ### **Vercel Deployment**
