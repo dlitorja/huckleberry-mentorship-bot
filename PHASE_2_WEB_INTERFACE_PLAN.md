@@ -472,16 +472,21 @@ CREATE TABLE image_purge_schedule (
   mentorship_id UUID REFERENCES mentorships(id),
   
   -- Purge timeline
-  eligible_for_purge_at TIMESTAMP WITH TIME ZONE, -- When they become eligible (24mo after end)
+  eligible_for_purge_at TIMESTAMP WITH TIME ZONE, -- When they become eligible (18mo after end)
   warning_sent_at TIMESTAMP WITH TIME ZONE,        -- When we sent warning email
   purge_executed_at TIMESTAMP WITH TIME ZONE,      -- When images were deleted
+  
+  -- Extension tracking (60-day one-time extension)
+  extension_granted BOOLEAN DEFAULT false,         -- Whether they used their extension
+  extended_at TIMESTAMP WITH TIME ZONE,            -- When extension was granted
+  extension_days INTEGER DEFAULT 60,               -- How many days granted (60)
   
   -- Stats
   images_count INTEGER,                            -- How many images will be purged
   storage_size_mb DECIMAL,                         -- MB to be freed
   
   -- Status
-  status TEXT DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'warned', 'purged', 'cancelled')),
+  status TEXT DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'warned', 'extended', 'purged', 'cancelled')),
   cancelled_reason TEXT,                           -- If they renewed, mark cancelled
   
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -505,16 +510,27 @@ for (const student of studentsToWarn) {
   // Mark warning sent
 }
 
-// 2. Execute purge (18 months after end)
-const studentsToPurge = await getAlumni({
-  monthsSinceEnded: 18,
-  warningSent: true,
-  hasImages: true
-});
+// 2. Execute purge (18 months after end, or 20 if extended)
+const studentsToPurge = await supabase
+  .from('image_purge_schedule')
+  .select('*, mentees(email, discord_id), mentorships(*)')
+  .eq('status', 'warned')
+  .lte('eligible_for_purge_at', new Date().toISOString());
 
-for (const student of studentsToPurge) {
+for (const student of studentsToPurge.data || []) {
+  // Double-check they didn't extend or renew
+  if (student.extension_granted) {
+    console.log(`Skipping purge - extension granted for ${student.mentees.email}`);
+    continue;
+  }
+  if (student.mentorships.status === 'active') {
+    console.log(`Skipping purge - student renewed: ${student.mentees.email}`);
+    await cancelPurge(student.id, 'Student renewed');
+    continue;
+  }
+  
+  // Execute purge
   await purgeStudentImages(student);
-  // Log purge completed
 }
 ```
 
@@ -565,6 +581,26 @@ for (const student of studentsToPurge) {
     <li>Organized by session in a ZIP file</li>
   </ul>
   
+  <div style="background-color: #f0f7ff; padding: 15px; border-radius: 8px; margin: 20px 0;">
+    <p style="margin: 0; font-size: 14px;">
+      <strong>Need more time?</strong>
+    </p>
+    <p style="margin: 10px 0 0 0; font-size: 14px;">
+      Click here for a one-time 60-day extension:
+    </p>
+    <div style="text-align: center; margin: 15px 0 0 0;">
+      <a href="https://app.huckleberry.art/extend-retention/[token]" 
+         style="display: inline-block; padding: 10px 24px; background-color: #28a745; 
+                color: white; text-decoration: none; border-radius: 5px; 
+                font-size: 14px; font-weight: bold;">
+        Extend by 60 Days
+      </a>
+    </div>
+    <p style="margin: 10px 0 0 0; font-size: 12px; color: #666;">
+      (Make sure to download before the extension expires!)
+    </p>
+  </div>
+  
   <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
   
   <p style="font-size: 13px; color: #999;">
@@ -605,6 +641,51 @@ for (const student of studentsToPurge) {
    ```
 4. Streams ZIP download to browser
 5. Marks download as completed (prevents re-download if already saved)
+
+---
+
+### **60-Day Extension Feature:**
+
+**Endpoint:** `GET /extend-retention/[token]`
+
+**What It Does:**
+1. Validates token (one-time use, expires after click)
+2. Checks if extension already used (limit 1 extension)
+3. Adds 60 days to purge date
+4. Updates `image_purge_schedule` table:
+   ```typescript
+   eligible_for_purge_at = current_purge_date + 60 days
+   status = 'extended'
+   extended_at = NOW()
+   ```
+5. Shows confirmation page:
+   ```
+   ✅ Extension Granted!
+   
+   Your images are now safe until [New Date].
+   
+   Please download your archive before this date - 
+   no further extensions are available.
+   
+   [Download Archive Now]
+   ```
+6. Sends confirmation email with new deadline
+
+**Database Tracking:**
+```sql
+ALTER TABLE image_purge_schedule
+ADD COLUMN extension_granted BOOLEAN DEFAULT false;
+
+ADD COLUMN extended_at TIMESTAMP WITH TIME ZONE;
+
+ADD COLUMN extension_days INTEGER; -- Track how many days granted
+```
+
+**Rules:**
+- ✅ One extension per alumni (60 days)
+- ❌ No second extensions
+- ✅ Token expires after use
+- ✅ Clear messaging about finality
 
 ---
 
@@ -760,20 +841,29 @@ IMAGE_PURGE_ENABLED=true        # Enable/disable purge system
 ```
 Month 0:  Student completes mentorship, ends subscription
           ↓
-Month 16: Warning email sent ⚠️
+Month 16: Warning email #1 sent ⚠️
           "Your images will be deleted in 2 months"
-          [Download Archive] button
+          [Download Archive] + [Extend 60 Days] buttons
           ↓
-Month 17: Reminder email (1 month left) ⚠️
-          "Last chance to download your images!"
+Month 17: Reminder email sent ⚠️
+          "Last chance! Delete in 1 month"
+          [Download Archive] + [Extend 60 Days] buttons
           ↓
 Month 18: Images purged 🗑️
+          OR
+          Extension granted → New deadline: Month 20
+          ↓
+Month 20: (If extended) Images purged 🗑️
           Storage freed
           Admin notified of purge completion
+
+───── OR ─────
+
+Student Returns (anytime) → Purge cancelled, images kept ✅
 ```
 
-**Grace Period:** 2 months of warnings is generous!  
-**Total Retention:** 18 months (1.5 years)
+**Grace Period:** 2 months of warnings + optional 60-day extension  
+**Total Retention:** 18 months base, up to 20 months with extension
 
 ---
 
@@ -803,8 +893,28 @@ Month 18: Images purged 🗑️
     </a>
   </div>
   
+  <div style="background-color: #f0f7ff; padding: 15px; border-radius: 8px; margin: 20px 0;">
+    <p style="margin: 0; font-size: 14px;">
+      <strong>Need 60 more days?</strong>
+    </p>
+    <p style="margin: 10px 0 0 0; font-size: 14px;">
+      One-time extension available:
+    </p>
+    <div style="text-align: center; margin: 15px 0 0 0;">
+      <a href="https://app.huckleberry.art/extend-retention/[token]" 
+         style="display: inline-block; padding: 10px 24px; background-color: #28a745; 
+                color: white; text-decoration: none; border-radius: 5px; 
+                font-size: 14px; font-weight: bold;">
+        Extend by 60 Days
+      </a>
+    </div>
+    <p style="margin: 10px 0 0 0; font-size: 12px; color: #666;">
+      (Must download before extension expires - no further extensions available)
+    </p>
+  </div>
+  
   <p style="font-size: 13px; color: #666;">
-    This is your last chance to save your work! The download link expires on [Date].
+    This is your final chance to save your work!
   </p>
 </div>
 ```
@@ -826,23 +936,31 @@ Month 18: Images purged 🗑️
 **Before Purge (Student Asks for More Time):**
 - Can manually cancel purge for them
 - Extend retention period if needed
-- **Inform them:** "Renewing your mentorship resets the retention period to 18 months from today!"
+- **Inform them:** "Renewing your mentorship resets the retention period to 18 months from when you next complete!"
 - This gently suggests renewal without being pushy
-- Student decides: extend once, or renew and keep images indefinitely
+- Student decides: extend once, or renew and keep images while active
 
-**Response Template:**
+**Response Template (If They Contact Support):**
 ```
 Hi [Name]!
 
-I can extend your image retention - no problem! Your images won't be 
-deleted for now.
+You can extend your image retention by 60 days using the link below:
+
+[Extend Retention by 60 Days]
+
+This is a one-time extension. Please make sure to download your images 
+before the new deadline, as we can't extend beyond that.
 
 Just FYI: If you ever decide to renew your mentorship, your images 
-would automatically be preserved indefinitely (as long as you're an 
-active student). The retention clock resets with each renewal.
+would be kept for as long as you remain an active student. When you 
+complete your next round of sessions, the 18-month retention period 
+would start over from that point.
 
 Let me know if you have any questions!
 ```
+
+**Better Approach - Add to Warning Emails:**
+Include extension button directly in warning emails (no support contact needed!)
 
 **After Purge (Student Asks to Restore):**
 - Images are gone (can't restore - be clear about this)
@@ -895,34 +1013,41 @@ ORDER BY month DESC;
 ## 🔄 **Complete Lifecycle**
 
 ```
-Active Student → Images stored indefinitely
+Active Student → Images kept while active
      ↓
 Mentorship Ends → Keep images (alumni status)
      ↓
-16 months → Warning email #1 (2 months notice)
+16 months → Warning email #1 with [Extend 60 Days] button
      ↓
-17 months → Warning email #2 (final warning)
+17 months → Warning email #2 with [Extend 60 Days] button
      ↓
-18 months → Purge images
-     ↓
-Storage freed!
+18 months → Images purged OR Extension granted
+     ↓           ↓
+Storage      20 months → Images purged
+freed!                → Storage freed
 
-───── OR ─────
+───── OR (ANYTIME) ─────
 
-Student Returns (anytime) → Cancel purge, keep images ✅
+Student Renews Mentorship → Purge cancelled, images kept ✅
+                          → Retention clock resets
 ```
 
-**Timeline:** 18 months total = 1.5 years retention
+**Timeline:** 
+- Base: 18 months (1.5 years)
+- With extension: 20 months (1.67 years)
+- Extension: One-time, 60 days
 
 ---
 
 ## ✅ **Implementation Checklist**
 
 ### **Phase 2 (Web Interface):**
-- [ ] Build download archive feature
+- [ ] Build download archive feature (ZIP with all images + notes)
+- [ ] Build 60-day extension feature (one-click, one-time)
 - [ ] Create purge management dashboard
-- [ ] Implement warning email templates
+- [ ] Implement warning email templates (with extension button)
 - [ ] Build purge execution logic
+- [ ] Build confirmation page for extensions
 
 ### **Phase 3 (Automation):**
 - [ ] Set up monthly cron job (Supabase Function or GitHub Actions)
@@ -949,12 +1074,14 @@ Student Returns (anytime) → Cancel purge, keep images ✅
 ### **For Students:**
 - ✅ 18 months of free storage (very generous)
 - ✅ Multiple warnings before deletion (2 months notice)
+- ✅ One-time 60-day extension (self-service, no support needed)
 - ✅ Easy one-click download
 - ✅ Fair and transparent policy
+- ✅ Clear deadlines and options
 
 ### **For Active Students:**
-- ✅ Never affected (images kept indefinitely)
-- ✅ No storage worries
+- ✅ Never affected (images kept while active)
+- ✅ No storage worries during mentorship
 - ✅ Encourages staying active
 
 ---
@@ -965,11 +1092,11 @@ Add to your terms/FAQ:
 
 > **Image Storage Policy**
 > 
-> - **Active students:** Your images are stored securely with unlimited retention
+> - **Active students:** Your images are stored securely for the duration of your active mentorship
 > - **Past students:** Images are kept for 18 months after your mentorship ends
 > - **Warnings:** We'll email you 2 months before deletion (at 16 months)
 > - **Download:** One-click archive download of all your images
-> - **Return:** If you renew your mentorship, your images are kept indefinitely
+> - **Renewals:** If you renew your mentorship, the 18-month retention period resets (images kept while active, then 18 months after you complete)
 >
 > This policy allows us to provide free image hosting while maintaining a sustainable service.
 
