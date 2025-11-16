@@ -1,8 +1,6 @@
 // test-webhook.js
 // Simple script to test the webhook endpoint locally
 
-import fetch from 'node-fetch';
-
 const testPayload = {
   email: 'test@example.com',
   offer_id: '2150278952' // Use one of your actual offer IDs

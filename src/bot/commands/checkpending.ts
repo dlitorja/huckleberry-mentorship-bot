@@ -43,7 +43,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
   // Calculate time since purchase
   const now = new Date();
-  const pendingWithTime = pendingJoins.map((join: any) => {
+  type PendingJoin = { email: string; created_at: string; instructors?: { name?: string | null } | null };
+  type PendingJoinWithTime = PendingJoin & { hoursSince: number };
+  const pendingWithTime: PendingJoinWithTime[] = (pendingJoins as PendingJoin[]).map((join) => {
     const createdAt = new Date(join.created_at);
     const hoursSince = Math.floor((now.getTime() - createdAt.getTime()) / (1000 * 60 * 60));
     return {
@@ -60,7 +62,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     .setTimestamp();
 
   // Add fields for each pending join
-  pendingWithTime.forEach((join: any, index: number) => {
+  pendingWithTime.forEach((join, index: number) => {
     if (index < 25) { // Discord embed limit is 25 fields
       const timeWarning = join.hoursSince > 24 ? '⚠️ ' : '';
       embed.addFields({

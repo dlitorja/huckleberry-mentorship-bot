@@ -11,10 +11,11 @@ Complete list of all bot commands organized by user type.
 - **`/liststudents`** - View all your students with session counts and last session dates
 - **`/sessionsummary`** - Show a student's remaining sessions (public message)
 
-### Session Notes (NEW!)
-- **`/addnote`** - Add text notes for a session
-- **`/addlink`** - Add resource links to a session  
-- **`/viewnotes`** - View session notes and links for a student
+### URL Shortener (NEW!)
+- **`/shortenurl`** - Create a short URL with analytics tracking
+- **`/urlstats`** - View analytics for a short URL
+- **`/urllist`** - List all your shortened URLs
+- **`/urldelete`** - Delete a short URL
 
 ---
 
@@ -259,10 +260,11 @@ When built, will add:
 
 ---
 
-## 🎉 **Total Commands: 13**
+## 🎉 **Total Commands: 17**
 
 - 4 for session management
 - 3 for session notes
+- 4 for URL shortener
 - 6 for admin monitoring and management (including removestudent!)
 
 Your mentorship bot is now a complete platform! 🚀

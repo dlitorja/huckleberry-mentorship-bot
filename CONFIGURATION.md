@@ -196,16 +196,32 @@ fly secrets set VARIABLE_NAME="new_value"
 
 ## 🔗 URL Shortener Configuration
 
-You can enable branded short links for analytics tracking.
+These variables control the behavior of the built-in URL shortener.
 
 ```env
-# Optional: Use a custom domain for short links (recommended)
-SHORT_URL_BASE=https://links.yourdomain.com
+# Optional: Use a custom domain for short links (e.g., https://links.yourdomain.com)
+# If not set, the bot falls back to your Fly.io app domain: https://${FLY_APP_NAME}.fly.dev
+SHORT_URL_BASE=
 
-# If not set, the bot falls back to:
-# https://${FLY_APP_NAME}.fly.dev
-FLY_APP_NAME=huckleberry-bot
+# Optional: Max redirects per IP per 15 minutes (default: 200)
+# Helps prevent abuse and denial-of-service attacks on your redirector.
+REDIRECT_RATE_LIMIT_MAX=200
+
+# Optional: Delete analytics data older than this many days (default: 180)
+# Keeps your database clean and respects user privacy by not storing data indefinitely.
+ANALYTICS_RETENTION_DAYS=180
 ```
 
-Set `SHORT_URL_BASE` to a subdomain you control (e.g., `links.huckleberry.art`) pointing to your Fly.io app. If you don’t set it, links will use your Fly.io app domain automatically.
+### `SHORT_URL_BASE`
+- **Purpose:** Sets a custom, branded domain for your short links. This is highly recommended for a professional appearance.
+- **Setup:** You must own the domain and point its DNS (usually a CNAME record) to your Fly.io app URL (e.g., `your-app-name.fly.dev`).
+- **Default:** If left blank, links will be generated using your app's default Fly.io domain.
+
+### `REDIRECT_RATE_LIMIT_MAX`
+- **Purpose:** Protects your redirect endpoint from being spammed or abused.
+- **Default:** `200`. A single user is unlikely to hit this limit during normal use.
+
+### `ANALYTICS_RETENTION_DAYS`
+- **Purpose:** Automatically purges old click-tracking data to keep your database size manageable and enhance privacy.
+- **Default:** `180` (approximately 6 months).
 

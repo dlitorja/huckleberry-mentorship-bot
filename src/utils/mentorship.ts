@@ -14,10 +14,10 @@ export async function getMentorshipByDiscordIds(params: {
   instructorDiscordId: string;
   menteeDiscordId: string;
   status?: 'active' | 'ended';
-}): Promise<{ data: MentorshipWithRelations | null; error: any }> {
+}): Promise<{ data: MentorshipWithRelations | null; error: unknown }> {
   const { instructorDiscordId, menteeDiscordId, status } = params;
 
-  const query = supabase
+  let query = supabase
     .from('mentorships')
     .select(
       `
@@ -34,15 +34,15 @@ export async function getMentorshipByDiscordIds(params: {
     .eq('mentees.discord_id', menteeDiscordId);
 
   if (status) {
-    (query as any).eq('status', status);
+    query = query.eq('status', status);
   }
 
-  const { data, error } = await (query as any).maybeSingle();
+  const { data, error } = await query.maybeSingle();
   if (error) return { data: null, error };
-  return { data: (data as any) ?? null, error: null };
+  return { data: (data as MentorshipWithRelations | null) ?? null, error: null };
 }
 
-export async function getAnyMentorshipForMentee(menteeDiscordId: string): Promise<{ data: MentorshipWithRelations | null; error: any }> {
+export async function getAnyMentorshipForMentee(menteeDiscordId: string): Promise<{ data: MentorshipWithRelations | null; error: unknown }> {
   const { data, error } = await supabase
     .from('mentorships')
     .select(
@@ -61,7 +61,7 @@ export async function getAnyMentorshipForMentee(menteeDiscordId: string): Promis
     .maybeSingle();
 
   if (error) return { data: null, error };
-  return { data: (data as any) ?? null, error: null };
+  return { data: (data as MentorshipWithRelations | null) ?? null, error: null };
 }
 
 

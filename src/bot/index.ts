@@ -157,3 +157,20 @@ if (!process.env.DISCORD_BOT_TOKEN) {
 }
 
 client.login(process.env.DISCORD_BOT_TOKEN);
+
+// --------------------
+// Graceful shutdown
+// --------------------
+async function shutdown(signal: string) {
+  console.log(`${signal} received. Shutting down Discord bot gracefully...`);
+  try {
+    await client.destroy();
+  } catch (err) {
+    console.error('Error destroying Discord client:', err);
+  } finally {
+    process.exit(0);
+  }
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));

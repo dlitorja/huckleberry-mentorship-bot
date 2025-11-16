@@ -10,6 +10,7 @@ import { notifyAdminPurchase, notifyAdminError } from '../utils/adminNotificatio
 import { CONFIG, getSupportContactString } from '../config/constants.js';
 import { removeStudentRole } from '../utils/roleManagement.js';
 import { logClick } from '../utils/urlShortener.js';
+import crypto from 'crypto';
 
 const app = express();
 const PORT = process.env.WEBHOOK_PORT || 3000;
@@ -30,6 +31,296 @@ app.use(oauthCallback);
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'Webhook server is running' });
 });
+
+// -------------------------------
+// Webhook helper functions
+// -------------------------------
+async function readdMenteeRoleIfWasEnded(discordUserId: string): Promise<boolean> {
+  try {
+    const roleId = await getMenteeRoleId();
+    if (!roleId) return false;
+    await fetch(
+      `https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/members/${discordUserId}/roles/${roleId}`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+        },
+      }
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function notifyReturningStudentAndInstructor(params: {
+  studentDiscordId: string;
+  email: string;
+  instructorName: string;
+  instructorId: string;
+  sessionTotal: string;
+  purchaseTime: string;
+}): Promise<void> {
+  const { studentDiscordId, email, instructorName, instructorId, sessionTotal, purchaseTime } = params;
+
+  // Fetch instructor Discord ID for DM
+  const { data: instructorDiscordData } = await supabase
+    .from('instructors')
+    .select('discord_id')
+    .eq('id', instructorId)
+    .single();
+
+  await Promise.allSettled([
+    (async () => {
+      try {
+        const studentDmResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ recipient_id: studentDiscordId }),
+        });
+        const studentDmChannel: { id?: string } = await studentDmResponse.json();
+        if (studentDmChannel.id) {
+          await fetch(`https://discord.com/api/channels/${studentDmChannel.id}/messages`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              content: `🎉 **Payment Processed Successfully!**\n\n` +
+                `Thank you for continuing your **1-on-1 mentorship** with **${instructorName}**!\n\n` +
+                `✅ **${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new 1-on-1 sessions** have been added to your account.\n` +
+                `💬 Reach out to your instructor to schedule your next 1-on-1 session.\n\n` +
+                `We're excited to continue your personalized mentorship journey!\n\n` +
+                `_Having any issues? ${getSupportContactString()}_`
+            }),
+          });
+        }
+      } catch {}
+    })(),
+    (async () => {
+      if (instructorDiscordData?.discord_id) {
+        try {
+          const instructorDmResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ recipient_id: instructorDiscordData.discord_id }),
+          });
+          const instructorDmChannel: { id?: string } = await instructorDmResponse.json();
+          if (instructorDmChannel.id) {
+            await fetch(`https://discord.com/api/channels/${instructorDmChannel.id}/messages`, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                content: `🔄 **Returning Student Renewed**\n\n` +
+                  `<@${studentDiscordId}> (${email}) has renewed their **1-on-1 mentorship**!\n\n` +
+                  `✅ **${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new 1-on-1 sessions** added to their account.\n` +
+                  `📊 **Total Sessions:** ${sessionTotal}\n` +
+                  `🛒 **Purchased:** ${purchaseTime}\n\n` +
+                  `They're ready to schedule their next 1-on-1 session!`
+              }),
+            });
+          }
+        } catch {}
+      }
+    })(),
+  ]);
+}
+
+async function sendInviteEmailAndNotifyAdmin(params: {
+  email: string;
+  instructorName: string;
+  inviteLink: string;
+  offerName: string;
+  offerPrice?: string | number | null;
+}): Promise<{ emailId?: string }> {
+  const { email, instructorName, inviteLink, offerName, offerPrice } = params;
+
+  const { data: emailData, error: emailError } = await resend.emails.send({
+    from: process.env.RESEND_FROM_EMAIL!,
+    to: email,
+    subject: 'Welcome to Your 1-on-1 Mentorship Program! 🎉',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h1 style="color: #5865F2;">Welcome to Your 1-on-1 Mentorship!</h1>
+        <p style="font-size: 16px; line-height: 1.6;">
+          Thank you for purchasing your 1-on-1 mentorship! We're excited to have you join our community.
+        </p>
+        <div style="background-color: #f0f7ff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #5865F2;">
+          <p style="margin: 0; font-size: 16px;">
+            <strong>👨‍🏫 Your Instructor:</strong> ${instructorName}
+          </p>
+        </div>
+        <h2 style="color: #333; font-size: 20px;">Next Step: Join Our Discord Server</h2>
+        <p style="font-size: 15px; line-height: 1.6;">
+          Click the button below to join our Discord community and connect with your instructor:
+        </p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${inviteLink}" style="display: inline-block; padding: 15px 32px; background-color: #5865F2; color: white; text-decoration: none; border-radius: 5px; font-size: 16px; font-weight: bold;">
+            Join Discord & Get Your Role
+          </a>
+        </div>
+        <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
+          <p style="margin: 0; font-size: 14px;">
+            <strong>⚠️ Already in our Discord server?</strong>
+          </p>
+          <p style="margin: 10px 0 0 0; font-size: 14px;">
+            You still need to click the link above! This will link your account to your purchase and automatically assign you the "1-on-1 Mentee" role.
+          </p>
+        </div>
+        <p style="font-size: 14px; color: #666; line-height: 1.6;">
+          <strong>Link not working?</strong> Copy and paste this URL into your browser:
+        </p>
+        <p style="font-size: 12px; background-color: #f5f5f5; padding: 10px; border-radius: 4px; word-break: break-all;">
+          ${inviteLink}
+        </p>
+        <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;">
+        <p style="font-size: 13px; color: #666;">
+          Questions? Contact us at <a href="mailto:${CONFIG.SUPPORT_EMAIL}">${CONFIG.SUPPORT_EMAIL}</a>
+        </p>
+      </div>
+    `
+  });
+
+  if (emailError) {
+    throw emailError;
+  }
+
+  await notifyAdminPurchase({
+    studentEmail: email,
+    instructorName,
+    offerName,
+    offerPrice: offerPrice ? String(offerPrice) : undefined,
+  });
+
+  return { emailId: emailData?.id };
+}
+
+// -------------------------------
+// Flow handlers
+// -------------------------------
+async function handleReturningStudentRenewal(params: {
+  email: string;
+  instructorId: string;
+  instructorName: string;
+  existingMentee: { id: string; discord_id: string };
+}): Promise<{ message: string }> {
+  const { email, instructorId, instructorName, existingMentee } = params;
+
+  const { data: mentorship, error: mentorshipError } = await supabase
+    .from('mentorships')
+    .select('id, sessions_remaining, total_sessions, status, returned_after_end')
+    .eq('mentee_id', existingMentee.id)
+    .eq('instructor_id', instructorId)
+    .maybeSingle();
+
+  if (mentorshipError || !mentorship) {
+    await supabase
+      .from('mentorships')
+      .insert({
+        mentee_id: existingMentee.id,
+        instructor_id: instructorId,
+        sessions_remaining: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE,
+        total_sessions: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE,
+        status: 'active'
+      });
+  } else {
+    const newSessionsRemaining = mentorship.sessions_remaining + CONFIG.DEFAULT_SESSIONS_PER_PURCHASE;
+    const newTotalSessions = Math.max(mentorship.total_sessions, newSessionsRemaining);
+    const wasEnded = mentorship.status === 'ended';
+
+    await supabase
+      .from('mentorships')
+      .update({
+        sessions_remaining: newSessionsRemaining,
+        total_sessions: newTotalSessions,
+        status: 'active',
+        ended_at: null,
+        end_reason: null,
+        returned_after_end: wasEnded ? true : mentorship.returned_after_end
+      })
+      .eq('id', mentorship.id);
+
+    if (wasEnded) {
+      await readdMenteeRoleIfWasEnded(existingMentee.discord_id).catch(() => {});
+    }
+  }
+
+  const { data: updatedMentorship } = await supabase
+    .from('mentorships')
+    .select('sessions_remaining, total_sessions')
+    .eq('mentee_id', existingMentee.id)
+    .eq('instructor_id', instructorId)
+    .single();
+
+  const sessionTotal = updatedMentorship
+    ? `${updatedMentorship.sessions_remaining}/${updatedMentorship.total_sessions}`
+    : 'N/A';
+
+  const purchaseTime = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+
+  await notifyReturningStudentAndInstructor({
+    studentDiscordId: existingMentee.discord_id,
+    email,
+    instructorName,
+    instructorId,
+    sessionTotal,
+    purchaseTime,
+  }).catch(() => {});
+
+  return { message: 'Returning student - sessions added' };
+}
+
+async function handleNewStudentPurchase(params: {
+  email: string;
+  instructorId: string;
+  instructorName: string;
+  offerIdString: string;
+  offerName: string;
+  offerPrice?: string | number | null;
+}): Promise<{ emailId?: string }> {
+  const { email, instructorId, instructorName, offerIdString, offerName, offerPrice } = params;
+
+  const oauthState = crypto.randomBytes(16).toString('hex');
+  const oauthStateExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+  const { error: insertError } = await supabase
+    .from('pending_joins')
+    .insert({
+      email: email.toLowerCase(),
+      instructor_id: instructorId,
+      offer_id: offerIdString,
+      oauth_state: oauthState,
+      oauth_state_expires_at: oauthStateExpiresAt,
+      created_at: new Date().toISOString()
+    });
+
+  if (insertError) {
+    throw insertError;
+  }
+
+  const inviteLink = `https://discord.com/api/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.DISCORD_REDIRECT_URI!)}&response_type=code&scope=identify%20email%20guilds.join&state=${encodeURIComponent(oauthState)}`;
+
+  const { emailId } = await sendInviteEmailAndNotifyAdmin({
+    email,
+    instructorName,
+    inviteLink,
+    offerName,
+    offerPrice,
+  });
+
+  return { emailId };
+}
 
 // Kajabi webhook endpoint
 app.post('/webhook/kajabi', async (req, res) => {
@@ -71,7 +362,7 @@ app.post('/webhook/kajabi', async (req, res) => {
     }
 
     // Get instructor name for personalized messages
-    const instructorName = (offerData as any).instructors?.name || 'your instructor';
+    const instructorName = (offerData as { instructors?: { name?: string } } | null)?.instructors?.name || 'your instructor';
 
     // Extract price from webhook payload (if available)
     const offerPrice = req.body.payment_transaction?.amount_paid_decimal || 
@@ -79,7 +370,7 @@ app.post('/webhook/kajabi', async (req, res) => {
                        req.body.order?.order_items?.[0]?.unit_cost_decimal;
 
     // Check if this is a returning/existing student
-    const { data: existingMentee, error: menteeCheckError } = await supabase
+    const { data: existingMentee } = await supabase
       .from('mentees')
       .select('id, discord_id')
       .eq('email', email.toLowerCase())
@@ -87,317 +378,46 @@ app.post('/webhook/kajabi', async (req, res) => {
 
     // RETURNING STUDENT FLOW
     if (existingMentee && existingMentee.discord_id) {
-      console.log(`🔄 Returning student detected: ${email}`);
+      const result = await handleReturningStudentRenewal({
+        email,
+        instructorId: offerData.instructor_id,
+        instructorName,
+        existingMentee: { id: existingMentee.id, discord_id: existingMentee.discord_id },
+      });
 
-      // Find their mentorship with this instructor (check both active and ended)
-      const { data: mentorship, error: mentorshipError } = await supabase
-        .from('mentorships')
-        .select('id, sessions_remaining, total_sessions, status, returned_after_end')
-        .eq('mentee_id', existingMentee.id)
-        .eq('instructor_id', offerData.instructor_id)
-        .maybeSingle();
-
-      if (mentorshipError || !mentorship) {
-        // They exist but don't have a mentorship with THIS instructor (edge case)
-        console.log(`Creating new mentorship for existing mentee with new instructor`);
-        await supabase
-          .from('mentorships')
-          .insert({
-            mentee_id: existingMentee.id,
-            instructor_id: offerData.instructor_id,
-            sessions_remaining: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE,
-            total_sessions: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE,
-            status: 'active'
-          });
-      } else {
-        // Update sessions: Add to their current balance (allows banking)
-        const newSessionsRemaining = mentorship.sessions_remaining + CONFIG.DEFAULT_SESSIONS_PER_PURCHASE;
-        const newTotalSessions = Math.max(mentorship.total_sessions, newSessionsRemaining);
-        const wasEnded = mentorship.status === 'ended';
-
-        await supabase
-          .from('mentorships')
-          .update({
-            sessions_remaining: newSessionsRemaining,
-            total_sessions: newTotalSessions,
-            status: 'active',  // Reactivate if it was ended
-            ended_at: null,    // Clear ended timestamp
-            end_reason: null,  // Clear end reason
-            returned_after_end: wasEnded ? true : mentorship.returned_after_end  // Track if they returned
-          })
-          .eq('id', mentorship.id);
-
-        console.log(`✅ Added ${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} sessions to returning student. New balance: ${newSessionsRemaining}`);
-
-        // If mentorship was ended, re-add the Discord role
-        if (wasEnded) {
-          console.log('🔄 Reactivating ended mentorship - re-adding Discord role');
-          try {
-            // Use cached mentee role id
-            const roleId = await getMenteeRoleId();
-            if (roleId) {
-              await fetch(
-                `https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/members/${existingMentee.discord_id}/roles/${roleId}`,
-                {
-                  method: 'PUT',
-                  headers: {
-                    Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-                  },
-                }
-              );
-              console.log('✅ Re-added 1-on-1 Mentee role to returning student');
-            }
-          } catch (roleError) {
-            console.log('Could not re-add role to returning student:', roleError);
-          }
-        }
-      }
-
-      // Get updated mentorship data to show new session total
-      const { data: updatedMentorship } = await supabase
-        .from('mentorships')
-        .select('sessions_remaining, total_sessions')
-        .eq('mentee_id', existingMentee.id)
-        .eq('instructor_id', offerData.instructor_id)
-        .single();
-
-      const sessionTotal = updatedMentorship 
-        ? `${updatedMentorship.sessions_remaining}/${updatedMentorship.total_sessions}` 
-        : 'N/A';
-
-      const purchaseTime = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
-
-      // Fetch instructor Discord ID for DM
-      const { data: instructorDiscordData } = await supabase
-        .from('instructors')
-        .select('discord_id')
-        .eq('id', offerData.instructor_id)
-        .single();
-
-      // Send notifications in parallel
-      await Promise.allSettled([
-        (async () => {
-          try {
-            const studentDmResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
-              method: 'POST',
-              headers: {
-                Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ recipient_id: existingMentee.discord_id }),
-            });
-            const studentDmChannel: any = await studentDmResponse.json();
-            if (studentDmChannel.id) {
-              await fetch(`https://discord.com/api/channels/${studentDmChannel.id}/messages`, {
-                method: 'POST',
-                headers: {
-                  Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  content: `🎉 **Payment Processed Successfully!**\n\n` +
-                    `Thank you for continuing your **1-on-1 mentorship** with **${instructorName}**!\n\n` +
-                    `✅ **${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new 1-on-1 sessions** have been added to your account.\n` +
-                    `💬 Reach out to your instructor to schedule your next 1-on-1 session.\n\n` +
-                    `We're excited to continue your personalized mentorship journey!\n\n` +
-                    `_Having any issues? ${getSupportContactString()}_`
-                }),
-              });
-              console.log('✅ Renewal DM sent to returning student');
-            }
-          } catch (dmError) {
-            console.log('Could not send renewal DM to student:', dmError);
-          }
-        })(),
-        (async () => {
-          if (instructorDiscordData?.discord_id) {
-            try {
-              const instructorDmResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
-                method: 'POST',
-                headers: {
-                  Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ recipient_id: instructorDiscordData.discord_id }),
-              });
-              const instructorDmChannel: any = await instructorDmResponse.json();
-              if (instructorDmChannel.id) {
-                await fetch(`https://discord.com/api/channels/${instructorDmChannel.id}/messages`, {
-                  method: 'POST',
-                  headers: {
-                    Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    content: `🔄 **Returning Student Renewed**\n\n` +
-                      `<@${existingMentee.discord_id}> (${email}) has renewed their **1-on-1 mentorship**!\n\n` +
-                      `✅ **${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new 1-on-1 sessions** added to their account.\n` +
-                      `📊 **Total Sessions:** ${sessionTotal}\n` +
-                      `🛒 **Purchased:** ${purchaseTime}\n\n` +
-                      `They're ready to schedule their next 1-on-1 session!`
-                  }),
-                });
-                console.log('✅ Renewal notification sent to instructor');
-              }
-            } catch (instructorDmError) {
-              console.log('Could not send renewal notification to instructor:', instructorDmError);
-            }
-          }
-        })(),
-        (async () => {
-          try {
-            await resend.emails.send({
-              from: process.env.RESEND_FROM_EMAIL!,
-              to: CONFIG.ADMIN_EMAIL,
-              subject: `🔄 Renewal: ${email}`,
-              html: `
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                  <h2 style="color: #4CAF50;">🔄 STUDENT RENEWAL</h2>
-                  
-                  <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                    <p><strong>👤 Student:</strong> ${email}</p>
-                    <p><strong>👨‍🏫 Instructor:</strong> ${instructorName}</p>
-                    <p><strong>📦 Offer:</strong> ${(offerData as any).offer_name}</p>
-                    ${offerPrice ? `<p><strong>💰 Price:</strong> $${offerPrice}</p>` : ''}
-                    <p><strong>⏰ Time:</strong> ${new Date().toLocaleString()}</p>
-                  </div>
-                  
-                  <div style="background-color: #e8f5e9; padding: 15px; border-left: 4px solid #4CAF50; border-radius: 4px;">
-                    <p style="margin: 0;"><strong>✅ Returning Student</strong></p>
-                    <p style="margin: 10px 0 0 0;">This student already has the 1-on-1 Mentee role.</p>
-                    <p style="margin: 10px 0 0 0;">✅ ${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new sessions have been added to their account.</p>
-                    <p style="margin: 10px 0 0 0;">💬 Student and instructor have been notified.</p>
-                  </div>
-                </div>
-              `
-            });
-            console.log('✅ Admin renewal notification email sent');
-          } catch (emailError) {
-            console.error('Failed to send admin renewal email:', emailError);
-          }
-        })()
-      ]);
-
-      return res.json({ 
-        success: true, 
-        message: 'Returning student - sessions added',
-        returning_student: true
+      return res.json({
+        success: true,
+        message: result.message,
+        returning_student: true,
       });
     }
 
-    // NEW STUDENT FLOW (original code continues here)
-    // Store pending join
-    const { error: insertError } = await supabase
-      .from('pending_joins')
-      .insert({
-        email: email.toLowerCase(),
-        instructor_id: offerData.instructor_id,
-        offer_id: offerIdString,
-        created_at: new Date().toISOString()
+    // NEW STUDENT FLOW
+    try {
+      const { emailId } = await handleNewStudentPurchase({
+        email,
+        instructorId: offerData.instructor_id,
+        instructorName,
+        offerIdString,
+        offerName: ((offerData as { offer_name?: string } | null)?.offer_name) || 'Unknown Offer',
+        offerPrice,
       });
 
-    if (insertError) {
-      console.error('Failed to store pending join:', insertError);
-      
-      // Notify admin of database error
+      return res.json({
+        success: true,
+        message: 'Webhook processed successfully',
+        email_id: emailId,
+      });
+    } catch (insertOrEmailError) {
+      console.error('Failed in new student flow:', insertOrEmailError);
       await notifyAdminError({
         type: 'database_error',
-        message: 'Failed to store pending join in database',
-        details: insertError,
-        studentEmail: email
+        message: 'Failed to process pending join or send email',
+        details: insertOrEmailError,
+        studentEmail: email,
       });
-      
-      return res.status(500).json({ error: 'Failed to store pending join' });
+      return res.status(500).json({ error: 'Failed to process new student flow' });
     }
-
-    // Generate Discord OAuth invite link
-    const inviteLink = `https://discord.com/api/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.DISCORD_REDIRECT_URI!)}&response_type=code&scope=identify%20email%20guilds.join`;
-
-    // Send email via Resend
-    const { data: emailData, error: emailError } = await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL!,
-      to: email,
-      subject: 'Welcome to Your 1-on-1 Mentorship Program! 🎉',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h1 style="color: #5865F2;">Welcome to Your 1-on-1 Mentorship!</h1>
-          
-          <p style="font-size: 16px; line-height: 1.6;">
-            Thank you for purchasing your 1-on-1 mentorship! We're excited to have you join our community.
-          </p>
-          
-          <div style="background-color: #f0f7ff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #5865F2;">
-            <p style="margin: 0; font-size: 16px;">
-              <strong>👨‍🏫 Your Instructor:</strong> ${instructorName}
-            </p>
-          </div>
-          
-          <h2 style="color: #333; font-size: 20px;">Next Step: Join Our Discord Server</h2>
-          
-          <p style="font-size: 15px; line-height: 1.6;">
-            Click the button below to join our Discord community and connect with your instructor:
-          </p>
-          
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${inviteLink}" style="display: inline-block; padding: 15px 32px; background-color: #5865F2; color: white; text-decoration: none; border-radius: 5px; font-size: 16px; font-weight: bold;">
-              Join Discord & Get Your Role
-            </a>
-          </div>
-          
-          <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
-            <p style="margin: 0; font-size: 14px;">
-              <strong>⚠️ Already in our Discord server?</strong>
-            </p>
-            <p style="margin: 10px 0 0 0; font-size: 14px;">
-              You still need to click the link above! This will link your account to your purchase and automatically assign you the "1-on-1 Mentee" role.
-            </p>
-          </div>
-          
-          <p style="font-size: 14px; color: #666; line-height: 1.6;">
-            <strong>Link not working?</strong> Copy and paste this URL into your browser:
-          </p>
-          <p style="font-size: 12px; background-color: #f5f5f5; padding: 10px; border-radius: 4px; word-break: break-all;">
-            ${inviteLink}
-          </p>
-          
-          <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 30px 0;">
-          
-          <p style="font-size: 13px; color: #666;">
-            Questions? Contact us at <a href="mailto:${CONFIG.SUPPORT_EMAIL}">${CONFIG.SUPPORT_EMAIL}</a>
-          </p>
-        </div>
-      `
-    });
-
-    if (emailError) {
-      console.error('Failed to send email:', emailError);
-      
-      // Notify admin of email failure
-      await notifyAdminError({
-        type: 'email_failed',
-        message: 'Failed to send invite email via Resend',
-        details: emailError,
-        studentEmail: email
-      });
-      
-      return res.status(500).json({ error: 'Failed to send email' });
-    }
-
-    console.log('Email sent successfully:', emailData);
-
-    // Notify admin of successful purchase
-    await notifyAdminPurchase({
-      studentEmail: email,
-      instructorName: (offerData as any).instructors?.name || 'Unknown',
-      offerName: (offerData as any).offer_name || 'Unknown Offer',
-      offerPrice: offerPrice ? String(offerPrice) : undefined
-    });
-
-    res.json({ 
-      success: true, 
-      message: 'Webhook processed successfully',
-      email_id: emailData?.id
-    });
 
   } catch (error) {
     console.error('Webhook error:', error);
@@ -496,7 +516,7 @@ app.post('/webhook/kajabi/cancellation', async (req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Webhook server running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
   console.log(`Kajabi webhook: http://localhost:${PORT}/webhook/kajabi`);
@@ -589,7 +609,12 @@ app.get('/:shortCode', async (req, res) => {
       userAgent: req.headers['user-agent'] || null,
       referer: (req.headers['referer'] as string) || null,
       ip: (req.headers['x-forwarded-for'] as string) || (req.socket?.remoteAddress ?? null)
-    }).catch(() => {});
+    }).catch((err) => {
+      console.error('Failed to log URL click analytics:', {
+        shortCode,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
 
     // Update counters (best-effort)
     supabase
@@ -599,8 +624,12 @@ app.get('/:shortCode', async (req, res) => {
         last_clicked_at: new Date().toISOString()
       })
       .eq('short_code', shortCode)
-      .then(() => {})
-      .catch(() => {});
+      .catch((err) => {
+        console.error('Failed to update click counters for short URL:', {
+          shortCode,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
 
     // Redirect
     return res.redirect(301, urlData.original_url);
@@ -650,8 +679,10 @@ async function runAnalyticsRetentionCleanup() {
 }
 
 // Run at startup and hourly thereafter
-runAnalyticsRetentionCleanup().catch(() => {});
-setInterval(runAnalyticsRetentionCleanup, 60 * 60 * 1000);
+runAnalyticsRetentionCleanup().catch((err) => {
+  console.error('Initial analytics retention cleanup invoke failed:', err);
+});
+const retentionInterval = setInterval(runAnalyticsRetentionCleanup, 60 * 60 * 1000);
 
 // -------------------------------
 // Discord role caching utilities
@@ -668,15 +699,64 @@ async function getMenteeRoleId(): Promise<string | null> {
         },
       }
     );
-    const roles: any[] = await rolesResponse.json();
+    const roles: Array<{ id?: string; name?: string }> = await rolesResponse.json();
     const menteeRole = roles.find(r => r && r.name === '1-on-1 Mentee');
     if (menteeRole?.id) {
       cachedMenteeRoleId = menteeRole.id;
       return cachedMenteeRoleId;
     }
-  } catch {
-    // ignore
+  } catch (err) {
+    console.error('Failed to fetch Discord roles for mentee role cache:', err);
   }
   return null;
 }
+
+// -------------------------------
+// Graceful shutdown
+// -------------------------------
+function shutdown(signal: string) {
+  console.log(`${signal} received. Shutting down webhook server gracefully...`);
+  try {
+    clearInterval(retentionInterval);
+  } catch {}
+
+  server.close((err?: Error) => {
+    if (err) {
+      console.error('Error during server close:', err);
+      process.exit(1);
+    } else {
+      console.log('Webhook server closed. Goodbye!');
+      process.exit(0);
+    }
+  });
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+// -----------------------------------------
+// Centralized error handling middleware
+// -----------------------------------------
+app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const requestId = (req.headers['x-request-id'] as string) || undefined;
+  const formattedError =
+    err instanceof Error
+      ? { message: err.message, stack: err.stack }
+      : { message: String(err) };
+  console.error('Unhandled error in request handler:', {
+    path: req.path,
+    method: req.method,
+    requestId,
+    error: formattedError,
+  });
+
+  if (res.headersSent) {
+    return;
+  }
+
+  res.status(500).json({
+    error: 'Internal server error',
+    requestId,
+  });
+});
 

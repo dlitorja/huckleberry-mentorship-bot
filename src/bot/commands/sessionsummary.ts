@@ -1,7 +1,7 @@
 // src/bot/commands/sessionsummary.ts
 import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction } from 'discord.js';
-import { supabase } from '../supabaseClient.js';
+import { supabase as _supabase } from '../supabaseClient.js';
 import { getMentorshipByDiscordIds } from '../../utils/mentorship.js';
 
 export const data = new SlashCommandBuilder()

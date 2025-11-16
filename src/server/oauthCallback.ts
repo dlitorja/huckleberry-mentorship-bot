@@ -2,7 +2,6 @@
 
 import 'dotenv/config';
 import express from 'express';
-import fetch from 'node-fetch';
 import { supabase } from '../bot/supabaseClient.js';
 import { notifyAdminError } from '../utils/adminNotifications.js';
 import { CONFIG, getSupportContactString } from '../config/constants.js';
@@ -11,13 +10,34 @@ const router = express.Router();
 
 // OAuth callback endpoint
 router.get('/oauth/callback', async (req, res) => {
-  const { code } = req.query;
+  const { code, state } = req.query;
 
   if (!code) {
     return res.status(400).send('Missing authorization code');
   }
+  if (!state || typeof state !== 'string') {
+    return res.status(400).send('Missing OAuth state');
+  }
 
   try {
+    // Validate state BEFORE token exchange
+    const { data: pendingJoinByState, error: stateError } = await supabase
+      .from('pending_joins')
+      .select('*')
+      .eq('oauth_state', state)
+      .is('discord_user_id', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (stateError || !pendingJoinByState) {
+      return res.status(400).send('Invalid or expired OAuth state');
+    }
+
+    if (pendingJoinByState.oauth_state_expires_at && new Date(pendingJoinByState.oauth_state_expires_at) < new Date()) {
+      return res.status(400).send('OAuth state expired');
+    }
+
     // Exchange code for access token
     const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
       method: 'POST',
@@ -33,7 +53,7 @@ router.get('/oauth/callback', async (req, res) => {
       }),
     });
 
-    const tokenData: any = await tokenResponse.json();
+    const tokenData: { access_token?: string } = await tokenResponse.json();
 
     if (!tokenData.access_token) {
       console.error('Failed to get access token:', tokenData);
@@ -47,26 +67,19 @@ router.get('/oauth/callback', async (req, res) => {
       },
     });
 
-    const userData: any = await userResponse.json();
+    const userData: { id: string; email: string } = await userResponse.json();
     console.log('User authenticated:', userData.email, userData.id);
 
-    // Find pending join by email
-    const { data: pendingJoin, error } = await supabase
-      .from('pending_joins')
-      .select('*')
-      .eq('email', userData.email.toLowerCase())
-      .is('discord_user_id', null)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+    // Use the state-validated pending join
+    const pendingJoin = pendingJoinByState;
 
-    if (error || !pendingJoin) {
-      console.error('No pending join found for:', userData.email);
+    if (!pendingJoin) {
+      console.error('No pending join found for state:', state);
       return res.send(`
         <html>
           <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
             <h1>❌ No Purchase Found</h1>
-            <p>We couldn't find a purchase associated with your email (${userData.email}).</p>
+            <p>We couldn't find a purchase associated with your session.</p>
             <p>Please contact support at ${CONFIG.SUPPORT_EMAIL} if you believe this is an error.</p>
           </body>
         </html>
@@ -79,8 +92,8 @@ router.get('/oauth/callback', async (req, res) => {
         Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
       },
     });
-    const roles: any = await rolesResponse.json();
-    const menteeRole = roles.find((r: any) => r.name === '1-on-1 Mentee');
+    const roles: Array<{ id: string; name: string }> = await rolesResponse.json();
+    const menteeRole = roles.find((r) => r.name === '1-on-1 Mentee');
 
     if (!menteeRole) {
       console.error('Could not find "1-on-1 Mentee" role in guild');
@@ -133,12 +146,14 @@ router.get('/oauth/callback', async (req, res) => {
       .from('pending_joins')
       .update({
         discord_user_id: userData.id,
-        joined_at: new Date().toISOString()
+        joined_at: new Date().toISOString(),
+        oauth_state: null,
+        oauth_state_expires_at: null
       })
       .eq('id', pendingJoin.id);
 
     // Get instructor Discord ID and offer details
-    const { data: instructorData, error: instructorError } = await supabase
+    const { data: instructorData, error: _instructorError } = await supabase
       .from('instructors')
       .select('discord_id, name')
       .eq('id', pendingJoin.instructor_id)
@@ -193,7 +208,7 @@ router.get('/oauth/callback', async (req, res) => {
         }),
       });
       
-      const adminDmChannel: any = await adminDmResponse.json();
+      const adminDmChannel: { id?: string } = await adminDmResponse.json();
       
       if (adminDmChannel.id) {
         const instructorMention = instructorData?.discord_id ? `<@${instructorData.discord_id}>` : 'Unknown';
@@ -233,7 +248,7 @@ router.get('/oauth/callback', async (req, res) => {
         }),
       });
       
-      const menteeDmChannel: any = await menteeDmResponse.json();
+      const menteeDmChannel: { id?: string } = await menteeDmResponse.json();
       
       if (menteeDmChannel.id) {
         const instructorMention = instructorData?.discord_id ? `<@${instructorData.discord_id}>` : 'your instructor';
@@ -271,7 +286,7 @@ router.get('/oauth/callback', async (req, res) => {
           }),
         });
         
-        const instructorDmChannel: any = await instructorDmResponse.json();
+        const instructorDmChannel: { id?: string } = await instructorDmResponse.json();
         
         if (instructorDmChannel.id) {
           await fetch(`https://discord.com/api/channels/${instructorDmChannel.id}/messages`, {

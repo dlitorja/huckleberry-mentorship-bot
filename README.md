@@ -10,10 +10,10 @@ A comprehensive Discord bot and webhook system for managing 1-on-1 mentorship pr
 - **Session Management**: Track sessions with date tracking, notes, and resource links
 - **Recurring Students**: Automatically handles returning students with session banking
 - **Student Removal**: Automatic role removal on cancellations/refunds via Kajabi webhooks, plus manual admin control
-- **Admin Notifications**: Real-time alerts via email and Discord DM for purchases, errors, and important events
+- **URL Shortener & Analytics**: Create branded short links with detailed click tracking and analytics.
 
 ### 💬 Discord Commands
-- **Instructor Commands**: `/session`, `/addsessions`, `/liststudents`, `/sessionsummary`, `/addnote`, `/viewnotes`, `/addlink`
+- **Instructor Commands**: `/session`, `/addsessions`, `/liststudents`, `/sessionsummary`, `/addnote`, `/viewnotes`, `/addlink`, `/shortenurl`, `/urlstats`, `/urllist`, `/urldelete`
 - **Admin Commands**: `/adminsummary`, `/linkstudent`, `/removestudent`
 - **Session Notes**: Add text notes and resource links to track mentorship progress
 
@@ -118,7 +118,8 @@ The bot uses multiple Supabase tables. Run the SQL files in the `database/` dire
 2. **`database/add_session_tracking.sql`** - Adds `last_session_date` column
 3. **`database/add_session_notes.sql`** - Adds session_notes and session_links tables
 4. **`database/add_mentorship_status.sql`** - Adds status tracking for ended mentorships
-5. **`database/insert_kajabi_offers.sql`** - Populate your Kajabi offer mappings
+5. **`database/add_url_shortener.sql`** - Adds tables for the URL shortener.
+6. **`database/insert_kajabi_offers.sql`** - Populate your Kajabi offer mappings
 
 **Key Tables:**
 - `instructors` - Instructor profiles with Discord IDs
@@ -128,6 +129,8 @@ The bot uses multiple Supabase tables. Run the SQL files in the `database/` dire
 - `pending_joins` - Tracks purchases awaiting Discord onboarding
 - `session_notes` - Session notes with timestamps
 - `session_links` - Resource links attached to sessions
+- `shortened_urls` - Stores short links and metadata
+- `url_analytics` - Tracks click data for each short link
 
 See `database/schema.sql` for complete schema details.
 
@@ -144,6 +147,10 @@ For complete command documentation, see **[COMMANDS_SUMMARY.md](COMMANDS_SUMMARY
 - **`/addnote`** - Add a text note to a session for a student
 - **`/viewnotes`** - View all session notes and links for a student
 - **`/addlink`** - Add a resource link to a session note
+- **`/shortenurl`** - Create a short URL with analytics
+- **`/urlstats`** - View analytics for a short URL
+- **`/urllist`** - List all your short URLs
+- **`/urldelete`** - Delete a short URL
 
 ### Admin Commands
 
@@ -157,7 +164,7 @@ For complete command documentation, see **[COMMANDS_SUMMARY.md](COMMANDS_SUMMARY
 /session student:@JohnDoe date:2025-01-15
 /addsessions student:@JaneDoe amount:4
 /addnote student:@JohnDoe note:Discussed composition principles
-/addlink note_id:123 url:https://example.com/resource title:Great Tutorial
+/shortenurl url:https://my-long-url.com/with/a/very/long/path code:promo1
 /removestudent student:@CompletedStudent reason:"Graduated from program"
 ```
 

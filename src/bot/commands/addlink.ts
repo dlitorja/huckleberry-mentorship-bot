@@ -76,12 +76,13 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   // Get or create session note for this date
-  let { data: sessionNote, error: noteError } = await supabase
+  const { data: sessionNoteData, error: _noteError } = await supabase
     .from('session_notes')
     .select('id')
     .eq('mentorship_id', mentorshipData.id)
     .eq('session_date', dateOnly)
     .maybeSingle();
+  let sessionNote = sessionNoteData;
 
   if (!sessionNote) {
     // Create session note

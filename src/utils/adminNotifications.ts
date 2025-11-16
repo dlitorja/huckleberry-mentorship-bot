@@ -1,7 +1,6 @@
 // src/utils/adminNotifications.ts
 // Utility functions for sending admin notifications
 
-import fetch from 'node-fetch';
 import { Resend } from 'resend';
 
 const ADMIN_ID = process.env.DISCORD_ADMIN_ID;
@@ -21,7 +20,7 @@ interface PurchaseNotification {
 interface ErrorNotification {
   type: 'email_failed' | 'role_assignment_failed' | 'database_error' | 'webhook_error' | 'cancellation_webhook_error';
   message: string;
-  details?: any;
+  details?: unknown;
   studentEmail?: string;
   studentDiscordId?: string;
 }
@@ -55,7 +54,7 @@ async function sendAdminDM(content: string): Promise<boolean> {
       }),
     });
 
-    const dmChannel: any = await dmResponse.json();
+    const dmChannel: { id?: string } = await dmResponse.json();
 
     if (!dmChannel.id) {
       console.error('Failed to create DM channel with admin:', dmChannel);

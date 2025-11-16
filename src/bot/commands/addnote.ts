@@ -67,7 +67,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   // Check if note already exists for this date
-  const { data: existingNote, error: checkError } = await supabase
+  const { data: existingNote, error: _checkError } = await supabase
     .from('session_notes')
     .select('id')
     .eq('mentorship_id', mentorshipData.id)

@@ -43,7 +43,16 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   // Group by instructor
-  const groupedByInstructor = mentorships.reduce((acc: any, m: any) => {
+  type MentorshipRow = {
+    sessions_remaining: number;
+    total_sessions: number;
+    last_session_date?: string | null;
+    status: string;
+    instructors?: { discord_id?: string | null } | null;
+    mentees?: { discord_id?: string | null } | null;
+  };
+  type StudentSummary = { menteeId?: string | null; remaining: number; total: number; lastSession?: string | null };
+  const groupedByInstructor = mentorships.reduce<Record<string, StudentSummary[]>>((acc, m: MentorshipRow) => {
     const instructorId = m.instructors?.discord_id || 'Unknown';
     if (!acc[instructorId]) {
       acc[instructorId] = [];
@@ -63,7 +72,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   
   for (const [instructorId, students] of Object.entries(groupedByInstructor)) {
     message += `**Instructor:** <@${instructorId}>\n`;
-    (students as any[]).forEach(s => {
+    students.forEach(s => {
       const lastSession = s.lastSession 
         ? new Date(s.lastSession).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
         : 'No sessions yet';

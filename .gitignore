@@ -1,3 +1,9 @@
+.cursor/
+.fly/
+**/*.log
+dist/
+node_modules/
+
 .fly/
 .cursor/
 *** End Patch

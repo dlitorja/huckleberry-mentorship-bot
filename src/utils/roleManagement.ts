@@ -6,6 +6,33 @@ import { supabase } from '../bot/supabaseClient.js';
 import { notifyAdminError } from './adminNotifications.js';
 import { CONFIG, getSupportContactString } from '../config/constants.js';
 
+type DiscordDmChannel = { id?: string };
+type DiscordRole = { id?: string; name?: string };
+
+let cachedMenteeRoleId: string | null = null;
+async function getMenteeRoleId(): Promise<string | null> {
+  if (cachedMenteeRoleId) return cachedMenteeRoleId;
+  try {
+    const rolesResponse = await fetch(
+      `https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/roles`,
+      {
+        headers: {
+          Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+        },
+      }
+    );
+    const roles: DiscordRole[] = await rolesResponse.json();
+    const menteeRole = roles.find((r) => r && r.name === '1-on-1 Mentee');
+    if (menteeRole?.id) {
+      cachedMenteeRoleId = menteeRole.id;
+      return cachedMenteeRoleId;
+    }
+  } catch (err) {
+    console.error('Failed to fetch Discord roles for mentee role cache:', err);
+  }
+  return null;
+}
+
 interface RemoveStudentOptions {
   menteeDiscordId: string;
   reason?: string;
@@ -17,7 +44,7 @@ interface RemoveStudentOptions {
 interface RemoveStudentResult {
   success: boolean;
   message: string;
-  error?: any;
+  error?: unknown;
 }
 
 /**
@@ -143,29 +170,16 @@ async function removeDiscordRole(discordId: string, client?: Client): Promise<bo
         return false;
       }
 
-      const member: any = await response.json();
-
-      // Get guild roles to find the "1-on-1 Mentee" role ID
-      const rolesResponse = await fetch(
-        `https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/roles`,
-        {
-          headers: {
-            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-          },
-        }
-      );
-
-      const roles: any[] = await rolesResponse.json();
-      const menteeRole = roles.find(role => role.name === '1-on-1 Mentee');
-
-      if (!menteeRole) {
+      // Ensure role ID is cached/fetched once
+      const roleId = await getMenteeRoleId();
+      if (!roleId) {
         console.error('1-on-1 Mentee role not found in server');
         return false;
       }
 
       // Remove the role
       await fetch(
-        `https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/members/${discordId}/roles/${menteeRole.id}`,
+        `https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/members/${discordId}/roles/${roleId}`,
         {
           method: 'DELETE',
           headers: {
@@ -199,7 +213,7 @@ async function sendGoodbyeDM(discordId: string, reason: string): Promise<void> {
       }),
     });
 
-    const dmChannel: any = await dmResponse.json();
+    const dmChannel: DiscordDmChannel = await dmResponse.json();
 
     if (dmChannel.id) {
       await fetch(`https://discord.com/api/channels/${dmChannel.id}/messages`, {
@@ -240,7 +254,7 @@ async function notifyAdminRoleRemoval(email: string, discordId: string, reason: 
       }),
     });
 
-    const dmChannel: any = await dmResponse.json();
+    const dmChannel: DiscordDmChannel = await dmResponse.json();
 
     if (dmChannel.id) {
       await fetch(`https://discord.com/api/channels/${dmChannel.id}/messages`, {

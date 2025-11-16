@@ -56,14 +56,15 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
   // Send individual alert DMs to admin for each delayed join
   let alertsSent = 0;
-  for (const join of delayedJoins) {
+  type DelayedJoin = { email: string; created_at: string; instructors?: { name?: string | null; discord_id?: string | null } | null };
+  for (const join of (delayedJoins as DelayedJoin[])) {
     const createdAt = new Date(join.created_at);
     const hoursSince = Math.floor((new Date().getTime() - createdAt.getTime()) / (1000 * 60 * 60));
     
     await notifyAdminError({
       type: 'webhook_error',
       message: `Student hasn't joined after ${hoursSince} hours`,
-      details: `Email: ${join.email}\nInstructor: ${(join as any).instructors?.name}\nPurchase Date: ${createdAt.toLocaleString()}\n\nConsider following up with this student!`,
+      details: `Email: ${join.email}\nInstructor: ${join.instructors?.name ?? 'Unknown'}\nPurchase Date: ${createdAt.toLocaleString()}\n\nConsider following up with this student!`,
       studentEmail: join.email
     });
     
