@@ -43,8 +43,16 @@ for (const file of commandFiles) {
 // --------------------
 // Bot ready event
 // --------------------
-client.once('clientReady', () => {
+client.once('ready', () => {
   console.log(`Logged in as ${client.user?.tag}!`);
+});
+
+// Prevent crashes on Discord client errors
+client.on('error', (err) => {
+  console.error('Discord client error:', err);
+});
+client.on('shardError', (err) => {
+  console.error('Discord shard error:', err);
 });
 
 // --------------------
@@ -63,10 +71,15 @@ client.on('interactionCreate', async interaction => {
     await command.execute(interaction as ChatInputCommandInteraction);
   } catch (err) {
     console.error('Command execution error:', err);
-    if (interaction.deferred || interaction.replied) {
-      await interaction.editReply('An error occurred while handling your command.');
-    } else {
-      await interaction.reply('An error occurred while handling your command.');
+    // Gracefully handle cases where the interaction is no longer valid
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply('An error occurred while handling your command.');
+      } else if (interaction.isRepliable()) {
+        await interaction.reply({ content: 'An error occurred while handling your command.', ephemeral: true });
+      }
+    } catch {
+      // Ignore follow-up errors like Unknown interaction (10062) or already acknowledged (40060)
     }
   }
 });

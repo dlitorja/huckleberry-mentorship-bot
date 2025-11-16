@@ -24,12 +24,19 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 ```env
 RESEND_API_KEY=re_your_resend_api_key
 RESEND_FROM_EMAIL=noreply@yourdomain.com
+TESTIMONIAL_FORM_URL=https://forms.gle/YOUR_FORM_ID
 ```
 
 ### Server Configuration
 ```env
 WEBHOOK_PORT=3000
 NODE_ENV=production
+
+# URL Shortener hardening
+# Max redirects per IP per 15 minutes (default: 200)
+REDIRECT_RATE_LIMIT_MAX=200
+# Delete analytics older than this many days (default: 180)
+ANALYTICS_RETENTION_DAYS=180
 ```
 
 ---
@@ -184,4 +191,21 @@ fly secrets set VARIABLE_NAME="new_value"
 - Email addresses
 - Discord IDs
 - Organization-specific information
+
+---
+
+## 🔗 URL Shortener Configuration
+
+You can enable branded short links for analytics tracking.
+
+```env
+# Optional: Use a custom domain for short links (recommended)
+SHORT_URL_BASE=https://links.yourdomain.com
+
+# If not set, the bot falls back to:
+# https://${FLY_APP_NAME}.fly.dev
+FLY_APP_NAME=huckleberry-bot
+```
+
+Set `SHORT_URL_BASE` to a subdomain you control (e.g., `links.huckleberry.art`) pointing to your Fly.io app. If you don’t set it, links will use your Fly.io app domain automatically.
 

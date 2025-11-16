@@ -9,9 +9,11 @@ import oauthCallback from './oauthCallback.js';
 import { notifyAdminPurchase, notifyAdminError } from '../utils/adminNotifications.js';
 import { CONFIG, getSupportContactString } from '../config/constants.js';
 import { removeStudentRole } from '../utils/roleManagement.js';
+import { logClick } from '../utils/urlShortener.js';
 
 const app = express();
 const PORT = process.env.WEBHOOK_PORT || 3000;
+const ANALYTICS_RETENTION_DAYS = parseInt(process.env.ANALYTICS_RETENTION_DAYS || '180', 10);
 
 // Initialize Resend
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -517,4 +519,152 @@ app.listen(PORT, () => {
 });
 
 export default app;
+
+// -------------------------------
+// URL Shortener: Redirect handler
+// -------------------------------
+// Simple in-memory IP rate limiter for redirect endpoint
+type RateEntry = { count: number; resetAt: number };
+const redirectRateMap: Map<string, RateEntry> = new Map();
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const RATE_LIMIT_MAX = parseInt(process.env.REDIRECT_RATE_LIMIT_MAX || '200', 10); // per IP per window
+
+function checkRateLimit(ip: string | null): boolean {
+  if (!ip) return true;
+  const now = Date.now();
+  const entry = redirectRateMap.get(ip);
+  if (!entry || entry.resetAt <= now) {
+    redirectRateMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return true;
+  }
+  if (entry.count < RATE_LIMIT_MAX) {
+    entry.count += 1;
+    return true;
+  }
+  return false;
+}
+
+app.get('/:shortCode', async (req, res) => {
+  const { shortCode } = req.params;
+
+  try {
+    const clientIp =
+      (req.headers['x-forwarded-for'] as string) ||
+      (req.socket?.remoteAddress ?? null);
+
+    if (!checkRateLimit(clientIp)) {
+      return res.status(429).send('Too Many Requests');
+    }
+
+    const { data: urlData, error } = await supabase
+      .from('shortened_urls')
+      .select('original_url, is_active, expires_at, click_count')
+      .eq('short_code', shortCode)
+      .single();
+
+    if (error || !urlData) {
+      return res.status(404).send(`
+        <html>
+          <head><title>Link Not Found</title></head>
+          <body>
+            <h1>404 - Link Not Found</h1>
+            <p>This shortened link does not exist or has been deleted.</p>
+          </body>
+        </html>
+      `);
+    }
+
+    if (urlData.expires_at && new Date(urlData.expires_at) < new Date()) {
+      return res.status(410).send(`
+        <html>
+          <head><title>Link Expired</title></head>
+          <body>
+            <h1>410 - Link Expired</h1>
+            <p>This shortened link has expired.</p>
+          </body>
+        </html>
+      `);
+    }
+
+    if (!urlData.is_active) {
+      return res.status(410).send(`
+        <html>
+          <head><title>Link Disabled</title></head>
+          <body>
+            <h1>410 - Link Disabled</h1>
+            <p>This shortened link has been disabled.</p>
+          </body>
+        </html>
+      `);
+    }
+
+    // Fire and forget analytics logging (do not block redirect)
+    logClick({
+      shortCode,
+      userAgent: req.headers['user-agent'] || null,
+      referer: (req.headers['referer'] as string) || null,
+      ip: (req.headers['x-forwarded-for'] as string) || (req.socket?.remoteAddress ?? null)
+    }).catch(() => {});
+
+    // Update counters (best-effort)
+    supabase
+      .from('shortened_urls')
+      .update({
+        click_count: (urlData.click_count || 0) + 1,
+        last_clicked_at: new Date().toISOString()
+      })
+      .eq('short_code', shortCode)
+      .then(() => {})
+      .catch(() => {});
+
+    // Redirect
+    return res.redirect(301, urlData.original_url);
+  } catch (e) {
+    console.error('Redirect error:', e);
+    return res.status(500).send('Internal server error');
+  }
+});
+
+// -----------------------------------------
+// URL Shortener: Simple analytics API (GET)
+// -----------------------------------------
+app.get('/api/analytics/:shortCode', async (req, res) => {
+  const { shortCode } = req.params;
+  try {
+    const { data: analytics, error } = await supabase
+      .from('url_analytics')
+      .select('*')
+      .eq('short_code', shortCode)
+      .order('clicked_at', { ascending: false })
+      .limit(100);
+
+    if (error) {
+      return res.status(500).json({ error: 'Failed to fetch analytics' });
+    }
+    return res.json({ analytics: analytics ?? [] });
+  } catch (e) {
+    console.error('Analytics API error:', e);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// -----------------------------------------
+// URL Shortener: Analytics retention cleanup
+// -----------------------------------------
+async function runAnalyticsRetentionCleanup() {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - ANALYTICS_RETENTION_DAYS);
+  try {
+    await supabase
+      .from('url_analytics')
+      .delete()
+      .lt('clicked_at', cutoff.toISOString());
+  } catch (e) {
+    console.error('Analytics retention cleanup failed:', e);
+  }
+}
+
+// Run at startup and hourly thereafter
+runAnalyticsRetentionCleanup().catch(() => {});
+setInterval(runAnalyticsRetentionCleanup, 60 * 60 * 1000);
 

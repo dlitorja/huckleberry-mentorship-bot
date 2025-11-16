@@ -14,24 +14,17 @@ primary_region = "iad"  # Change this to your preferred region (iad = Virginia)
   auto_start_machines = true
   min_machines_running = 1
 
-[[services]]
-  protocol = "tcp"
-  internal_port = 3000
-
-  [[services.ports]]
-    port = 80
-    handlers = ["http"]
-
-  [[services.ports]]
-    port = 443
-    handlers = ["tls", "http"]
+[http_service.concurrency]
+  type = "connections"
+  hard_limit = 25
+  soft_limit = 20
 
 [env]
   WEBHOOK_PORT = "3000"
   NODE_ENV = "production"
 
-# Health check to ensure the bot is running
-[[services.http_checks]]
+# Health check to ensure the webhook server is running
+[[http_service.checks]]
   interval = "30s"
   timeout = "5s"
   grace_period = "10s"
