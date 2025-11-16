@@ -2,6 +2,7 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
+import { getMentorshipByDiscordIds } from '../../utils/mentorship.js';
 
 export const data = new SlashCommandBuilder()
   .setName('addnote')
@@ -53,38 +54,12 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   // Format date for database (date only, no time)
   const dateOnly = sessionDate.toISOString().split('T')[0];
 
-  // Lookup instructor UUID
-  const { data: instructorData, error: instructorError } = await supabase
-    .from('instructors')
-    .select('id')
-    .eq('discord_id', instructorDiscordId)
-    .single();
-
-  if (instructorError || !instructorData) {
-    await interaction.editReply('Instructor not found in the database.');
-    return;
-  }
-
-  // Lookup mentee UUID
-  const { data: menteeData, error: menteeError } = await supabase
-    .from('mentees')
-    .select('id')
-    .eq('discord_id', student.id)
-    .single();
-
-  if (menteeError || !menteeData) {
-    await interaction.editReply('Student not found in the database.');
-    return;
-  }
-
-  // Get mentorship ID
-  const { data: mentorshipData, error: mentorshipError } = await supabase
-    .from('mentorships')
-    .select('id, status')
-    .eq('mentee_id', menteeData.id)
-    .eq('instructor_id', instructorData.id)
-    .eq('status', 'active')  // Only add notes to active mentorships
-    .single();
+  // Optimized mentorship lookup
+  const { data: mentorshipData, error: mentorshipError } = await getMentorshipByDiscordIds({
+    instructorDiscordId,
+    menteeDiscordId: student.id,
+    status: 'active'
+  });
 
   if (mentorshipError || !mentorshipData) {
     await interaction.editReply(`Could not find a mentorship record for ${student.tag}.`);

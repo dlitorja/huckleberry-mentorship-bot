@@ -133,23 +133,11 @@ app.post('/webhook/kajabi', async (req, res) => {
         if (wasEnded) {
           console.log('🔄 Reactivating ended mentorship - re-adding Discord role');
           try {
-            // Get guild roles to find the "1-on-1 Mentee" role ID
-            const rolesResponse = await fetch(
-              `https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/roles`,
-              {
-                headers: {
-                  Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-                },
-              }
-            );
-
-            const roles: any[] = await rolesResponse.json();
-            const menteeRole = roles.find(role => role.name === '1-on-1 Mentee');
-
-            if (menteeRole) {
-              // Add the role back
+            // Use cached mentee role id
+            const roleId = await getMenteeRoleId();
+            if (roleId) {
               await fetch(
-                `https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/members/${existingMentee.discord_id}/roles/${menteeRole.id}`,
+                `https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/members/${existingMentee.discord_id}/roles/${roleId}`,
                 {
                   method: 'PUT',
                   headers: {
@@ -163,43 +151,6 @@ app.post('/webhook/kajabi', async (req, res) => {
             console.log('Could not re-add role to returning student:', roleError);
           }
         }
-      }
-
-      // Send renewal notification to student via Discord DM
-      try {
-        const studentDmResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            recipient_id: existingMentee.discord_id,
-          }),
-        });
-        
-        const studentDmChannel: any = await studentDmResponse.json();
-        
-        if (studentDmChannel.id) {
-          await fetch(`https://discord.com/api/channels/${studentDmChannel.id}/messages`, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              content: `🎉 **Payment Processed Successfully!**\n\n` +
-                `Thank you for continuing your **1-on-1 mentorship** with **${instructorName}**!\n\n` +
-                `✅ **${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new 1-on-1 sessions** have been added to your account.\n` +
-                `💬 Reach out to your instructor to schedule your next 1-on-1 session.\n\n` +
-                `We're excited to continue your personalized mentorship journey!\n\n` +
-                `_Having any issues? ${getSupportContactString()}_`
-            }),
-          });
-          console.log('✅ Renewal DM sent to returning student');
-        }
-      } catch (dmError) {
-        console.log('Could not send renewal DM to student:', dmError);
       }
 
       // Get updated mentorship data to show new session total
@@ -216,82 +167,116 @@ app.post('/webhook/kajabi', async (req, res) => {
 
       const purchaseTime = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
 
-      // Send notification to instructor via Discord DM
+      // Fetch instructor Discord ID for DM
       const { data: instructorDiscordData } = await supabase
         .from('instructors')
         .select('discord_id')
         .eq('id', offerData.instructor_id)
         .single();
 
-      if (instructorDiscordData?.discord_id) {
-        try {
-          const instructorDmResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              recipient_id: instructorDiscordData.discord_id,
-            }),
-          });
-          
-          const instructorDmChannel: any = await instructorDmResponse.json();
-          
-          if (instructorDmChannel.id) {
-            await fetch(`https://discord.com/api/channels/${instructorDmChannel.id}/messages`, {
+      // Send notifications in parallel
+      await Promise.allSettled([
+        (async () => {
+          try {
+            const studentDmResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
               method: 'POST',
               headers: {
                 Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
                 'Content-Type': 'application/json',
               },
-              body: JSON.stringify({
-                content: `🔄 **Returning Student Renewed**\n\n` +
-                  `<@${existingMentee.discord_id}> (${email}) has renewed their **1-on-1 mentorship**!\n\n` +
-                  `✅ **${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new 1-on-1 sessions** added to their account.\n` +
-                  `📊 **Total Sessions:** ${sessionTotal}\n` +
-                  `🛒 **Purchased:** ${purchaseTime}\n\n` +
-                  `They're ready to schedule their next 1-on-1 session!`
-              }),
+              body: JSON.stringify({ recipient_id: existingMentee.discord_id }),
             });
-            console.log('✅ Renewal notification sent to instructor');
+            const studentDmChannel: any = await studentDmResponse.json();
+            if (studentDmChannel.id) {
+              await fetch(`https://discord.com/api/channels/${studentDmChannel.id}/messages`, {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  content: `🎉 **Payment Processed Successfully!**\n\n` +
+                    `Thank you for continuing your **1-on-1 mentorship** with **${instructorName}**!\n\n` +
+                    `✅ **${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new 1-on-1 sessions** have been added to your account.\n` +
+                    `💬 Reach out to your instructor to schedule your next 1-on-1 session.\n\n` +
+                    `We're excited to continue your personalized mentorship journey!\n\n` +
+                    `_Having any issues? ${getSupportContactString()}_`
+                }),
+              });
+              console.log('✅ Renewal DM sent to returning student');
+            }
+          } catch (dmError) {
+            console.log('Could not send renewal DM to student:', dmError);
           }
-        } catch (instructorDmError) {
-          console.log('Could not send renewal notification to instructor:', instructorDmError);
-        }
-      }
-
-      // Send renewal notification to admin via email
-      try {
-        await resend.emails.send({
-          from: process.env.RESEND_FROM_EMAIL!,
-          to: CONFIG.ADMIN_EMAIL,
-          subject: `🔄 Renewal: ${email}`,
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <h2 style="color: #4CAF50;">🔄 STUDENT RENEWAL</h2>
-              
-              <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                <p><strong>👤 Student:</strong> ${email}</p>
-                <p><strong>👨‍🏫 Instructor:</strong> ${instructorName}</p>
-                <p><strong>📦 Offer:</strong> ${(offerData as any).offer_name}</p>
-                ${offerPrice ? `<p><strong>💰 Price:</strong> $${offerPrice}</p>` : ''}
-                <p><strong>⏰ Time:</strong> ${new Date().toLocaleString()}</p>
-              </div>
-              
-              <div style="background-color: #e8f5e9; padding: 15px; border-left: 4px solid #4CAF50; border-radius: 4px;">
-                <p style="margin: 0;"><strong>✅ Returning Student</strong></p>
-                <p style="margin: 10px 0 0 0;">This student already has the 1-on-1 Mentee role.</p>
-                <p style="margin: 10px 0 0 0;">✅ ${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new sessions have been added to their account.</p>
-                <p style="margin: 10px 0 0 0;">💬 Student and instructor have been notified.</p>
-              </div>
-            </div>
-          `
-        });
-        console.log('✅ Admin renewal notification email sent');
-      } catch (emailError) {
-        console.error('Failed to send admin renewal email:', emailError);
-      }
+        })(),
+        (async () => {
+          if (instructorDiscordData?.discord_id) {
+            try {
+              const instructorDmResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ recipient_id: instructorDiscordData.discord_id }),
+              });
+              const instructorDmChannel: any = await instructorDmResponse.json();
+              if (instructorDmChannel.id) {
+                await fetch(`https://discord.com/api/channels/${instructorDmChannel.id}/messages`, {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    content: `🔄 **Returning Student Renewed**\n\n` +
+                      `<@${existingMentee.discord_id}> (${email}) has renewed their **1-on-1 mentorship**!\n\n` +
+                      `✅ **${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new 1-on-1 sessions** added to their account.\n` +
+                      `📊 **Total Sessions:** ${sessionTotal}\n` +
+                      `🛒 **Purchased:** ${purchaseTime}\n\n` +
+                      `They're ready to schedule their next 1-on-1 session!`
+                  }),
+                });
+                console.log('✅ Renewal notification sent to instructor');
+              }
+            } catch (instructorDmError) {
+              console.log('Could not send renewal notification to instructor:', instructorDmError);
+            }
+          }
+        })(),
+        (async () => {
+          try {
+            await resend.emails.send({
+              from: process.env.RESEND_FROM_EMAIL!,
+              to: CONFIG.ADMIN_EMAIL,
+              subject: `🔄 Renewal: ${email}`,
+              html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                  <h2 style="color: #4CAF50;">🔄 STUDENT RENEWAL</h2>
+                  
+                  <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                    <p><strong>👤 Student:</strong> ${email}</p>
+                    <p><strong>👨‍🏫 Instructor:</strong> ${instructorName}</p>
+                    <p><strong>📦 Offer:</strong> ${(offerData as any).offer_name}</p>
+                    ${offerPrice ? `<p><strong>💰 Price:</strong> $${offerPrice}</p>` : ''}
+                    <p><strong>⏰ Time:</strong> ${new Date().toLocaleString()}</p>
+                  </div>
+                  
+                  <div style="background-color: #e8f5e9; padding: 15px; border-left: 4px solid #4CAF50; border-radius: 4px;">
+                    <p style="margin: 0;"><strong>✅ Returning Student</strong></p>
+                    <p style="margin: 10px 0 0 0;">This student already has the 1-on-1 Mentee role.</p>
+                    <p style="margin: 10px 0 0 0;">✅ ${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new sessions have been added to their account.</p>
+                    <p style="margin: 10px 0 0 0;">💬 Student and instructor have been notified.</p>
+                  </div>
+                </div>
+              `
+            });
+            console.log('✅ Admin renewal notification email sent');
+          } catch (emailError) {
+            console.error('Failed to send admin renewal email:', emailError);
+          }
+        })()
+      ]);
 
       return res.json({ 
         success: true, 
@@ -667,4 +652,31 @@ async function runAnalyticsRetentionCleanup() {
 // Run at startup and hourly thereafter
 runAnalyticsRetentionCleanup().catch(() => {});
 setInterval(runAnalyticsRetentionCleanup, 60 * 60 * 1000);
+
+// -------------------------------
+// Discord role caching utilities
+// -------------------------------
+let cachedMenteeRoleId: string | null = null;
+async function getMenteeRoleId(): Promise<string | null> {
+  if (cachedMenteeRoleId) return cachedMenteeRoleId;
+  try {
+    const rolesResponse = await fetch(
+      `https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/roles`,
+      {
+        headers: {
+          Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+        },
+      }
+    );
+    const roles: any[] = await rolesResponse.json();
+    const menteeRole = roles.find(r => r && r.name === '1-on-1 Mentee');
+    if (menteeRole?.id) {
+      cachedMenteeRoleId = menteeRole.id;
+      return cachedMenteeRoleId;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
 

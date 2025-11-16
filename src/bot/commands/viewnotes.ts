@@ -2,6 +2,7 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, MessageFlags, EmbedBuilder } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
+import { getMentorshipByDiscordIds } from '../../utils/mentorship.js';
 
 export const data = new SlashCommandBuilder()
   .setName('viewnotes')
@@ -31,7 +32,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     .from('instructors')
     .select('id')
     .eq('discord_id', userDiscordId)
-    .single();
+    .maybeSingle();
 
   const { data: menteeData } = await supabase
     .from('mentees')
@@ -51,13 +52,11 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   const isAdmin = userDiscordId === process.env.DISCORD_ADMIN_ID;
 
   if (instructorData) {
-    // User is an instructor - get their mentorship with this student
-    const { data: mentorshipData, error: mentorshipError } = await supabase
-      .from('mentorships')
-      .select('id')
-      .eq('mentee_id', menteeData.id)
-      .eq('instructor_id', instructorData.id)
-      .single();
+    // User is an instructor - get their mentorship with this student (optimized)
+    const { data: mentorshipData, error: mentorshipError } = await getMentorshipByDiscordIds({
+      instructorDiscordId: userDiscordId,
+      menteeDiscordId: student.id
+    });
 
     if (mentorshipError || !mentorshipData) {
       await interaction.editReply(`Could not find a mentorship record for ${student.tag}.`);

@@ -3,6 +3,8 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
+import { sendTestimonialRequest } from '../../utils/testimonialRequest.js';
+import { getMentorshipByDiscordIds } from '../../utils/mentorship.js';
 
 export const data = new SlashCommandBuilder()
   .setName('session')
@@ -56,46 +58,18 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     sessionDate = new Date();
   }
 
-  // Lookup instructor UUID
-  const { data: instructorData, error: instructorError } = await supabase
-    .from('instructors')
-    .select('id')
-    .eq('discord_id', instructorDiscordId)
-    .single();
-
-  if (instructorError || !instructorData) {
-    console.error('Instructor lookup error:', instructorError);
-    await interaction.editReply('Instructor not found in the database.');
-    return;
-  }
-
-  // Lookup mentee UUID
-  const { data: menteeData, error: menteeError } = await supabase
-    .from('mentees')
-    .select('id')
-    .eq('discord_id', student.id)
-    .single();
-
-  if (menteeError || !menteeData) {
-    console.error('Mentee lookup error:', menteeError);
-    await interaction.editReply('Student not found in the database.');
-    return;
-  }
-
-  // Lookup mentorship record
-  const { data, error } = await supabase
-    .from('mentorships')
-    .select('id, sessions_remaining, total_sessions, status')
-    .eq('mentee_id', menteeData.id)
-    .eq('instructor_id', instructorData.id)
-    .eq('status', 'active')  // Only update active mentorships
-    .single();
+  // Optimized mentorship lookup (single query with joins)
+  const { data, error } = await getMentorshipByDiscordIds({
+    instructorDiscordId,
+    menteeDiscordId: student.id,
+    status: 'active'
+  });
 
   if (error) {
-    console.error('Supabase error:', error);
+    console.error('Mentorship lookup error:', error);
   }
 
-  if (error || !data) {
+  if (!data) {
     await interaction.editReply(`Could not find a mentorship record for ${student.tag}.`);
     return;
   }
@@ -129,6 +103,46 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   
   if (newCount === 0) {
     message += '\n\n⚠️ **All sessions used!**';
+  }
+
+  // Trigger testimonial request after 3rd session completed (when 1 remains)
+  if (newCount === 1) {
+    try {
+      // Check if already requested or submitted
+      const { data: mentorshipCheck } = await supabase
+        .from('mentorships')
+        .select('testimonial_requested_at, testimonial_submitted')
+        .eq('id', data.id)
+        .single();
+
+      const alreadyRequested = Boolean(mentorshipCheck?.testimonial_requested_at);
+      const alreadySubmitted = Boolean(mentorshipCheck?.testimonial_submitted);
+
+      if (!alreadyRequested && !alreadySubmitted) {
+        const menteeEmail = (data as any).mentees?.email || null;
+        const instructorName = (data as any).instructors?.name || 'your instructor';
+
+        if (menteeEmail) {
+          const sent = await sendTestimonialRequest({
+            menteeEmail: menteeEmail,
+            menteeName: student.tag,
+            instructorName: instructorName,
+            sessionNumber: data.total_sessions - newCount
+          });
+
+          if (sent) {
+            await supabase
+              .from('mentorships')
+              .update({ testimonial_requested_at: new Date().toISOString() })
+              .eq('id', data.id);
+
+            message += '\n\n📧 Testimonial request sent!';
+          }
+        }
+      }
+    } catch (e) {
+      console.log('Testimonial request flow error:', e);
+    }
   }
 
   await interaction.editReply(message);
