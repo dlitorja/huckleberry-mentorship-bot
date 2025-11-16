@@ -617,19 +617,20 @@ app.get('/:shortCode', async (req, res) => {
     });
 
     // Update counters (best-effort)
-    supabase
-      .from('shortened_urls')
-      .update({
-        click_count: (urlData.click_count || 0) + 1,
-        last_clicked_at: new Date().toISOString()
-      })
-      .eq('short_code', shortCode)
-      .catch((err) => {
-        console.error('Failed to update click counters for short URL:', {
-          shortCode,
-          error: err instanceof Error ? err.message : String(err),
-        });
+    try {
+      await supabase
+        .from('shortened_urls')
+        .update({
+          click_count: (urlData.click_count || 0) + 1,
+          last_clicked_at: new Date().toISOString()
+        })
+        .eq('short_code', shortCode);
+    } catch (err) {
+      console.error('Failed to update click counters for short URL:', {
+        shortCode,
+        error: err instanceof Error ? err.message : String(err),
       });
+    }
 
     // Redirect
     return res.redirect(301, urlData.original_url);

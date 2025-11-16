@@ -23,7 +23,14 @@ export const data = new SlashCommandBuilder()
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
 
 export async function execute(interaction: ChatInputCommandInteraction) {
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  if (!interaction.deferred && !interaction.replied) {
+    try {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    } catch (err) {
+      // If we can't defer (e.g., stale interaction), bail early
+      return;
+    }
+  }
 
   try {
     // Admin-only enforcement

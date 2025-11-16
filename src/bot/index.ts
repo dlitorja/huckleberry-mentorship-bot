@@ -1,7 +1,7 @@
 // src/bot/index.ts
 
 import 'dotenv/config';
-import { Client, GatewayIntentBits, ChatInputCommandInteraction } from 'discord.js';
+import { Client, GatewayIntentBits, ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -76,7 +76,7 @@ client.on('interactionCreate', async interaction => {
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply('An error occurred while handling your command.');
       } else if (interaction.isRepliable()) {
-        await interaction.reply({ content: 'An error occurred while handling your command.', ephemeral: true });
+        await interaction.reply({ content: 'An error occurred while handling your command.', flags: MessageFlags.Ephemeral });
       }
     } catch {
       // Ignore follow-up errors like Unknown interaction (10062) or already acknowledged (40060)
