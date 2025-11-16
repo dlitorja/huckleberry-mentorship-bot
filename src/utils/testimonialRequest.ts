@@ -16,41 +16,41 @@ export async function sendTestimonialRequest(options: {
 		await resend.emails.send({
 			from: process.env.RESEND_FROM_EMAIL!,
 			to: menteeEmail,
-			subject: `How's your mentorship going with ${instructorName}? 🎨`,
+			subject: `Quick favor for ${instructorName}? Share your experience ✨`,
 			html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h1 style="color: #5865F2;">We'd love to hear from you! 💬</h1>
+          <h1 style="color: #5865F2;">We'd love to hear how it's going with ${instructorName} 💬</h1>
           
           <p>Hi ${menteeName.split('#')[0]},</p>
           
-          <p>You've completed <strong>${sessionNumber} sessions</strong> with 
-          <strong>${instructorName}</strong> – that's awesome progress! 🎉</p>
+          <p>You’ve completed <strong>${sessionNumber} session${sessionNumber === 1 ? '' : 's'}</strong> with 
+          <strong>${instructorName}</strong> — amazing progress! 🎉</p>
           
-          <p>We're always looking to improve, and your feedback means the world to us. 
-          Would you mind sharing your experience so far?</p>
+          <p>Your feedback helps our instructors understand what’s working in their instruction, 
+          where it’s helping most, and how to keep improving the mentorship experience for everyone.</p>
+
+          <p>Would you mind sharing a quick note about your experience so far?</p>
           
           <div style="text-align: center; margin: 30px 0;">
             <a href="${formUrl}" 
                style="display: inline-block; padding: 15px 32px; background-color: #5865F2; 
                       color: white; text-decoration: none; border-radius: 5px; 
                       font-size: 16px; font-weight: bold;">
-              Share Your Experience (2 min)
+              Share Your Experience (2–3 min)
             </a>
           </div>
           
-          <p style="font-size: 14px; color: #666;">
-            <strong>We'd love to know:</strong>
-          </p>
+          <p style="font-size: 14px; color: #666;"><strong>Helpful prompts:</strong></p>
           <ul style="font-size: 14px; color: #666;">
-            <li>How has the mentorship helped you improve?</li>
-            <li>What's been most valuable to you?</li>
-            <li>Would you recommend it to other artists?</li>
+            <li>What’s improved for you since starting with ${instructorName}?</li>
+            <li>What was most valuable in your sessions together?</li>
+            <li>Would you recommend ${instructorName}’s mentorship to other artists? Why?</li>
           </ul>
           
-          <p style="font-size: 13px; color: #999; margin-top: 40px;">
-            Your feedback helps us improve and helps other artists decide if our 
-            mentorships are right for them. Thank you for being part of our community! ❤️
-          </p>
+          <div style="font-size: 13px; color: #555; background:#f8f9fb; padding:12px 16px; border-radius:8px; margin-top:24px;">
+            Your words directly support ${instructorName} and help more mentees find the right guidance. 
+            Thanks for being part of the community! ❤️
+          </div>
         </div>
       `
 		});

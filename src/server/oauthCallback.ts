@@ -166,24 +166,63 @@ router.get('/oauth/callback', async (req, res) => {
       .eq('offer_id', pendingJoin.offer_id)
       .single();
 
-    // Get mentorship to show session count
-    const { data: menteeRecord } = await supabase
+    // Ensure mentee exists and mentorship is created with default sessions
+    // 1) Upsert mentee by email, attach discord_id
+    const { data: existingMenteeByEmail } = await supabase
       .from('mentees')
-      .select('id')
-      .eq('discord_id', userData.id)
-      .single();
+      .select('id, discord_id')
+      .eq('email', (pendingJoin.email as string).toLowerCase())
+      .maybeSingle();
 
-    let sessionInfo = 'Sessions not yet configured';
-    if (menteeRecord) {
-      const { data: mentorshipData } = await supabase
-        .from('mentorships')
-        .select('sessions_remaining, total_sessions')
-        .eq('mentee_id', menteeRecord.id)
-        .eq('instructor_id', pendingJoin.instructor_id)
+    let menteeId: string | null = null;
+    if (existingMenteeByEmail?.id) {
+      menteeId = existingMenteeByEmail.id;
+      if (existingMenteeByEmail.discord_id !== userData.id) {
+        await supabase
+          .from('mentees')
+          .update({ discord_id: userData.id })
+          .eq('id', menteeId);
+      }
+    } else {
+      const { data: newMentee } = await supabase
+        .from('mentees')
+        .insert({
+          email: (pendingJoin.email as string).toLowerCase(),
+          discord_id: userData.id
+        })
+        .select('id')
         .single();
-      
-      if (mentorshipData) {
-        sessionInfo = `${mentorshipData.sessions_remaining}/${mentorshipData.total_sessions} sessions`;
+      menteeId = newMentee?.id ?? null;
+    }
+
+    // 2) Ensure mentorship exists; if not, create with default sessions
+    let sessionInfo = 'Sessions not yet configured';
+    if (menteeId) {
+      const { data: existingMentorship } = await supabase
+        .from('mentorships')
+        .select('id, sessions_remaining, total_sessions, status')
+        .eq('mentee_id', menteeId)
+        .eq('instructor_id', pendingJoin.instructor_id)
+        .maybeSingle();
+
+      if (!existingMentorship) {
+        const defaultSessions = CONFIG.DEFAULT_SESSIONS_PER_PURCHASE;
+        const { data: created } = await supabase
+          .from('mentorships')
+          .insert({
+            mentee_id: menteeId,
+            instructor_id: pendingJoin.instructor_id,
+            sessions_remaining: defaultSessions,
+            total_sessions: defaultSessions,
+            status: 'active'
+          })
+          .select('sessions_remaining, total_sessions')
+          .single();
+        if (created) {
+          sessionInfo = `${created.sessions_remaining}/${created.total_sessions} sessions`;
+        }
+      } else {
+        sessionInfo = `${existingMentorship.sessions_remaining}/${existingMentorship.total_sessions} sessions`;
       }
     }
 

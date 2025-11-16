@@ -288,8 +288,9 @@ async function handleNewStudentPurchase(params: {
   offerIdString: string;
   offerName: string;
   offerPrice?: string | number | null;
+  menteeName?: string | null;
 }): Promise<{ emailId?: string }> {
-  const { email, instructorId, instructorName, offerIdString, offerName, offerPrice } = params;
+  const { email, instructorId, instructorName, offerIdString, offerName, offerPrice, menteeName } = params;
 
   const oauthState = crypto.randomBytes(16).toString('hex');
   const oauthStateExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
@@ -307,6 +308,143 @@ async function handleNewStudentPurchase(params: {
 
   if (insertError) {
     throw insertError;
+  }
+
+  // --- Robust data provisioning at purchase time ---
+  // 1) Ensure mentee exists (by email), without requiring Discord join yet
+  let menteeId: string | null = null;
+  try {
+    const { data: existingMentee } = await supabase
+      .from('mentees')
+      .select('id, discord_id')
+      .eq('email', email.toLowerCase())
+      .maybeSingle();
+
+    if (existingMentee?.id) {
+      menteeId = existingMentee.id;
+      console.log('[webhook] Found existing mentee by email:', email.toLowerCase(), 'id=', menteeId);
+    } else {
+      const { data: newMentee, error: insertMenteeError } = await supabase
+        .from('mentees')
+        .insert({
+          email: email.toLowerCase(),
+          discord_id: null,
+          name: menteeName || email.split('@')[0]  // fallback to local-part of email
+        })
+        .select('id')
+        .single();
+      menteeId = newMentee?.id ?? null;
+      if (insertMenteeError) {
+        console.error('[webhook] Failed to insert mentee:', insertMenteeError);
+      } else {
+        console.log('[webhook] Inserted new mentee:', email.toLowerCase(), 'id=', menteeId);
+      }
+    }
+  } catch (e) {
+    await notifyAdminError({
+      type: 'database_error',
+      message: 'Failed to upsert mentee during purchase webhook',
+      details: e,
+      studentEmail: email,
+    });
+    console.error('[webhook] Exception during mentee upsert:', e);
+  }
+
+  // 2) Ensure mentorship exists and is additive for renewals
+  if (menteeId) {
+    try {
+      const { data: existingMentorship } = await supabase
+        .from('mentorships')
+        .select('id, sessions_remaining, total_sessions, status, returned_after_end')
+        .eq('mentee_id', menteeId)
+        .eq('instructor_id', instructorId)
+        .maybeSingle();
+
+      const addSessions = CONFIG.DEFAULT_SESSIONS_PER_PURCHASE;
+
+      if (!existingMentorship) {
+        const { error: createMentorshipError } = await supabase
+          .from('mentorships')
+          .insert({
+            mentee_id: menteeId,
+            instructor_id: instructorId,
+            sessions_remaining: addSessions,
+            total_sessions: addSessions,
+            status: 'active'
+          });
+        if (createMentorshipError) {
+          // If another webhook already created it (duplicate delivery), convert to additive update
+          if ((createMentorshipError as any).code === '23505') {
+            console.warn('[webhook] Mentorship already exists; incrementing sessions instead');
+            const { data: current } = await supabase
+              .from('mentorships')
+              .select('id, sessions_remaining, total_sessions, status, returned_after_end')
+              .eq('mentee_id', menteeId)
+              .eq('instructor_id', instructorId)
+              .maybeSingle();
+
+            if (current) {
+              const wasEnded = current.status === 'ended';
+              const newRemaining = (current.sessions_remaining ?? 0) + addSessions;
+              const newTotal = Math.max(current.total_sessions ?? addSessions, newRemaining);
+
+              const { error: updateAfterConflictError } = await supabase
+                .from('mentorships')
+                .update({
+                  sessions_remaining: newRemaining,
+                  total_sessions: newTotal,
+                  status: 'active',
+                  ended_at: null,
+                  end_reason: null,
+                  returned_after_end: wasEnded ? true : current.returned_after_end
+                })
+                .eq('id', current.id);
+
+              if (updateAfterConflictError) {
+                console.error('[webhook] Failed to update mentorship after conflict:', updateAfterConflictError);
+              } else {
+                console.log('[webhook] Updated mentorship after conflict for', email.toLowerCase(), 'newRemaining', newRemaining, 'newTotal', newTotal);
+              }
+            } else {
+              console.error('[webhook] Conflict reported but mentorship not found on subsequent select');
+            }
+          } else {
+            console.error('[webhook] Failed to create mentorship:', createMentorshipError);
+          }
+        } else {
+          console.log('[webhook] Created mentorship for', email.toLowerCase(), 'instructor', instructorId, 'sessions', addSessions);
+        }
+      } else {
+        const wasEnded = existingMentorship.status === 'ended';
+        const newRemaining = (existingMentorship.sessions_remaining ?? 0) + addSessions;
+        const newTotal = Math.max(existingMentorship.total_sessions ?? addSessions, newRemaining);
+
+        const { error: updateMentorshipError } = await supabase
+          .from('mentorships')
+          .update({
+            sessions_remaining: newRemaining,
+            total_sessions: newTotal,
+            status: 'active',
+            ended_at: null,
+            end_reason: null,
+            returned_after_end: wasEnded ? true : existingMentorship.returned_after_end
+          })
+          .eq('id', existingMentorship.id);
+        if (updateMentorshipError) {
+          console.error('[webhook] Failed to update mentorship for renewal:', updateMentorshipError);
+        } else {
+          console.log('[webhook] Updated mentorship for', email.toLowerCase(), 'newRemaining', newRemaining, 'newTotal', newTotal, 'wasEnded', wasEnded);
+        }
+      }
+    } catch (e) {
+      await notifyAdminError({
+        type: 'database_error',
+        message: 'Failed to create or update mentorship during purchase webhook',
+        details: e,
+        studentEmail: email,
+      });
+      console.error('[webhook] Exception during mentorship ensure:', e);
+    }
   }
 
   const inviteLink = `https://discord.com/api/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.DISCORD_REDIRECT_URI!)}&response_type=code&scope=identify%20email%20guilds.join&state=${encodeURIComponent(oauthState)}`;
@@ -394,6 +532,13 @@ app.post('/webhook/kajabi', async (req, res) => {
 
     // NEW STUDENT FLOW
     try {
+      const menteeName =
+        req.body.member?.name ||
+        req.body.payload?.member_name ||
+        (req.body.member_first_name && req.body.member_last_name
+          ? `${req.body.member_first_name} ${req.body.member_last_name}`
+          : req.body.member_first_name || req.body.member_last_name || null);
+
       const { emailId } = await handleNewStudentPurchase({
         email,
         instructorId: offerData.instructor_id,
@@ -401,6 +546,7 @@ app.post('/webhook/kajabi', async (req, res) => {
         offerIdString,
         offerName: ((offerData as { offer_name?: string } | null)?.offer_name) || 'Unknown Offer',
         offerPrice,
+        menteeName,
       });
 
       return res.json({

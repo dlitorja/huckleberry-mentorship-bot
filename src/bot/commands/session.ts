@@ -140,6 +140,23 @@ export async function execute(interaction: ChatInputCommandInteraction) {
           }
         }
       }
+
+      // Append renewal notice to the command reply
+      message += '\n\nℹ️ Your mentorship renews automatically one month from your original purchase.' +
+        ' To pause or cancel before renewal, email huckleberryartinc@gmail.com.';
+
+      // Send a friendly DM to the student
+      try {
+        await student.send(
+          `Hi ${student.username}! You’re on your last session for this cycle. ` +
+          `Your mentorship will renew automatically one month from your original purchase. ` +
+          `If you’d like to pause or cancel instead, please do so before the renewal. ` +
+          `Questions? Email us at huckleberryartinc@gmail.com.`
+        );
+      } catch (dmErr) {
+        // Ignore DM failures (user may have DMs closed)
+        console.log('Could not DM student about renewal notice:', dmErr);
+      }
     } catch (e) {
       console.log('Testimonial request flow error:', e);
     }
