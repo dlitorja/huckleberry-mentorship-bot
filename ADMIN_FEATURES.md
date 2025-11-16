@@ -30,8 +30,14 @@ The bot will automatically notify you via email or Discord DM for the following 
 
 👤 Student: @Username (customer@email.com)
 👨‍🏫 Instructor: @InstructorName
+📦 Offer: Offer Name
+📊 Sessions: 4/4 sessions
 ⏰ Time: 11/09/2025, 10:35:12 AM
 ```
+
+Notes:
+- Role assignment now respects per-offer configuration. If `kajabi_offers.discord_role_name` is set, that role is used (supports group offerings).
+- OAuth flow uses a per-invite `state` value stored in `pending_joins` to prevent CSRF and link hijacking.
 
 ### 3. ❌ **Error Alerts**
 **When:** Something goes wrong in the onboarding process
@@ -85,6 +91,9 @@ The bot will automatically notify you via email or Discord DM for the following 
 📋 Details:
 This offer needs to be added to the database.
 ```
+
+Additional data captured on purchase:
+- `purchases` table logs `transaction_id`, amount and currency when present (idempotent on `transaction_id`).
 
 ### 4. ⏳ **Delayed Join Alerts**
 **When:** You run `/alertdelayed` command (manual trigger)

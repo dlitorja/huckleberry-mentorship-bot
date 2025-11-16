@@ -2,7 +2,7 @@
 
 **Purpose:** Automatically request testimonials from students after their 3rd or 4th session
 
-**Status:** Planning Phase  
+**Status:** Implemented (Quick Win live)  
 **Priority:** Medium (nice-to-have, enhances marketing)  
 **Estimated Time:** 1-2 days to implement
 
@@ -140,6 +140,8 @@ ADD COLUMN testimonial_requested_at TIMESTAMP WITH TIME ZONE;
 ALTER TABLE mentorships 
 ADD COLUMN testimonial_submitted BOOLEAN DEFAULT false;
 ```
+
+Status: The `testimonial_requested_at` and `testimonial_submitted` columns are live via migration `20251116133000_add_testimonial_columns.sql`. Email requests are active when `TESTIMONIAL_FORM_URL` is configured and the trigger logic is enabled in the `/session` flow.
 
 ---
 
@@ -337,7 +339,7 @@ Testimonials section in web portal:
 
 ## 🚀 **Recommended Implementation Path**
 
-### **Quick Win (This Week):**
+### **Quick Win (Live):**
 
 1. **Modify `/session` command** to detect 3rd/4th session
 2. **Send email via Resend** with Google Forms link
@@ -345,7 +347,7 @@ Testimonials section in web portal:
 
 **Time:** 2-3 hours  
 **Effort:** Low  
-**Value:** Immediate testimonial collection
+**Value:** Immediate testimonial collection (currently in production)
 
 ---
 

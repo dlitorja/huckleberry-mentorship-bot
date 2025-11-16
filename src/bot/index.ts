@@ -41,11 +41,16 @@ for (const file of commandFiles) {
 }
 
 // --------------------
-// Bot ready event
+// Bot ready event (forward-compatible with discord.js v15)
 // --------------------
-client.once('ready', () => {
+const onReady = () => {
   console.log(`Logged in as ${client.user?.tag}!`);
-});
+};
+client.once('ready', onReady);
+// v15+ emits 'clientReady' instead of 'ready'
+// Register both to be forward-compatible
+// @ts-expect-error - 'clientReady' will exist in v15
+client.once('clientReady', onReady);
 
 // Prevent crashes on Discord client errors
 client.on('error', (err) => {

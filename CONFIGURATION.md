@@ -37,6 +37,12 @@ NODE_ENV=production
 REDIRECT_RATE_LIMIT_MAX=200
 # Delete analytics older than this many days (default: 180)
 ANALYTICS_RETENTION_DAYS=180
+
+# Optional: base URL for short links (recommended for custom domain)
+SHORT_URL_BASE=https://links.yourdomain.com
+
+# Optional: used for Fly.io domain fallback in short links
+FLY_APP_NAME=your-fly-app-name
 ```
 
 ---
@@ -99,9 +105,12 @@ DEFAULT_SESSIONS_PER_PURCHASE=4
 
 ### `DEFAULT_SESSIONS_PER_PURCHASE`
 **Used for:**
-- New student mentorships
-- Returning student renewals
+- New student mentorships and renewals when `kajabi_offers.sessions_per_purchase` is NOT set for the purchased offer
 - Manual student linking
+
+**Per-offer override:**
+- Set `sessions_per_purchase` in the `kajabi_offers` table to control bundle size per product (preferred).
+- Falls back to `DEFAULT_SESSIONS_PER_PURCHASE` if not configured.
 
 ---
 
@@ -118,6 +127,8 @@ fly secrets set SUPPORT_DISCORD_ID="123456789012345678"
 fly secrets set SUPPORT_DISCORD_NAME="Your Name"
 fly secrets set ADMIN_EMAIL="admin@yourdomain.com"
 fly secrets set DEFAULT_SESSIONS_PER_PURCHASE="4"
+fly secrets set SHORT_URL_BASE="https://links.yourdomain.com" # optional
+fly secrets set FLY_APP_NAME="your-fly-app-name"              # optional for short link fallback
 ```
 
 ### For Railway/Render/Other Platforms

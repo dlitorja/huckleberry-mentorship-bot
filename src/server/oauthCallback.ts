@@ -86,17 +86,25 @@ router.get('/oauth/callback', async (req, res) => {
       `);
     }
 
-    // Find the "1-on-1 Mentee" role ID from your guild
+    // Determine role name based on offer mapping (fallback to "1-on-1 Mentee")
+    const { data: offerRoleData } = await supabase
+      .from('kajabi_offers')
+      .select('discord_role_name')
+      .eq('offer_id', pendingJoin.offer_id)
+      .single();
+    const desiredRoleName = (offerRoleData as { discord_role_name?: string } | null)?.discord_role_name || '1-on-1 Mentee';
+
+    // Find the desired role ID from your guild
     const rolesResponse = await fetch(`https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/roles`, {
       headers: {
         Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
       },
     });
     const roles: Array<{ id: string; name: string }> = await rolesResponse.json();
-    const menteeRole = roles.find((r) => r.name === '1-on-1 Mentee');
+    const menteeRole = roles.find((r) => r.name === desiredRoleName);
 
     if (!menteeRole) {
-      console.error('Could not find "1-on-1 Mentee" role in guild');
+      console.error(`Could not find "${desiredRoleName}" role in guild`);
     }
 
     // Add user to guild (if not already a member)
@@ -132,12 +140,12 @@ router.get('/oauth/callback', async (req, res) => {
         // Notify admin of role assignment failure
         await notifyAdminError({
           type: 'role_assignment_failed',
-          message: 'Failed to assign "1-on-1 Mentee" role',
+          message: `Failed to assign "${desiredRoleName}" role`,
           details: errorText,
           studentEmail: userData.email
         });
       } else {
-        console.log(`✅ Successfully assigned "1-on-1 Mentee" role to ${userData.email}`);
+        console.log(`✅ Successfully assigned "${desiredRoleName}" role to ${userData.email}`);
       }
     }
 

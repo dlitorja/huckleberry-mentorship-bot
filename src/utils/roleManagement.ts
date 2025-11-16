@@ -9,9 +9,9 @@ import { CONFIG, getSupportContactString } from '../config/constants.js';
 type DiscordDmChannel = { id?: string };
 type DiscordRole = { id?: string; name?: string };
 
-let cachedMenteeRoleId: string | null = null;
-async function getMenteeRoleId(): Promise<string | null> {
-  if (cachedMenteeRoleId) return cachedMenteeRoleId;
+let cachedRoleIds: Record<string, string> = {};
+async function getRoleIdByName(roleName: string): Promise<string | null> {
+  if (cachedRoleIds[roleName]) return cachedRoleIds[roleName];
   try {
     const rolesResponse = await fetch(
       `https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/roles`,
@@ -22,13 +22,13 @@ async function getMenteeRoleId(): Promise<string | null> {
       }
     );
     const roles: DiscordRole[] = await rolesResponse.json();
-    const menteeRole = roles.find((r) => r && r.name === '1-on-1 Mentee');
-    if (menteeRole?.id) {
-      cachedMenteeRoleId = menteeRole.id;
-      return cachedMenteeRoleId;
+    const role = roles.find((r) => r && r.name === roleName);
+    if (role?.id) {
+      cachedRoleIds[roleName] = role.id;
+      return cachedRoleIds[roleName];
     }
   } catch (err) {
-    console.error('Failed to fetch Discord roles for mentee role cache:', err);
+    console.error('Failed to fetch Discord roles:', err);
   }
   return null;
 }
@@ -39,6 +39,7 @@ interface RemoveStudentOptions {
   sendGoodbyeDm?: boolean;
   notifyAdmin?: boolean;
   client?: Client;
+  roleName?: string; // dynamic role removal (default "1-on-1 Mentee")
 }
 
 interface RemoveStudentResult {
@@ -51,7 +52,7 @@ interface RemoveStudentResult {
  * Removes the "1-on-1 Mentee" role from a student and updates their mentorship status
  */
 export async function removeStudentRole(options: RemoveStudentOptions): Promise<RemoveStudentResult> {
-  const { menteeDiscordId, reason = 'Mentorship ended', sendGoodbyeDm = true, notifyAdmin = true, client } = options;
+  const { menteeDiscordId, reason = 'Mentorship ended', sendGoodbyeDm = true, notifyAdmin = true, client, roleName = '1-on-1 Mentee' } = options;
 
   try {
     // Get mentee data from database
@@ -84,7 +85,7 @@ export async function removeStudentRole(options: RemoveStudentOptions): Promise<
     }
 
     // Remove Discord role
-    const roleRemoved = await removeDiscordRole(menteeDiscordId, client);
+    const roleRemoved = await removeDiscordRole(menteeDiscordId, roleName, client);
 
     if (!roleRemoved) {
       return {
@@ -105,7 +106,7 @@ export async function removeStudentRole(options: RemoveStudentOptions): Promise<
 
     return {
       success: true,
-      message: `Successfully removed 1-on-1 Mentee role from <@${menteeDiscordId}>`
+      message: `Successfully removed ${roleName} role from <@${menteeDiscordId}>`
     };
 
   } catch (error) {
@@ -131,7 +132,7 @@ export async function removeStudentRole(options: RemoveStudentOptions): Promise<
 /**
  * Removes the "1-on-1 Mentee" role from a Discord user
  */
-async function removeDiscordRole(discordId: string, client?: Client): Promise<boolean> {
+async function removeDiscordRole(discordId: string, roleName: string, client?: Client): Promise<boolean> {
   try {
     // If client is provided, use it; otherwise use Discord API directly
     if (client) {
@@ -143,15 +144,15 @@ async function removeDiscordRole(discordId: string, client?: Client): Promise<bo
         return false;
       }
 
-      const menteeRole = guild.roles.cache.find(role => role.name === '1-on-1 Mentee');
+      const menteeRole = guild.roles.cache.find(role => role.name === roleName);
       
       if (!menteeRole) {
-        console.error('1-on-1 Mentee role not found in server');
+        console.error(`${roleName} role not found in server`);
         return false;
       }
 
       await member.roles.remove(menteeRole);
-      console.log(`✅ Removed 1-on-1 Mentee role from ${discordId}`);
+      console.log(`✅ Removed ${roleName} role from ${discordId}`);
       return true;
     } else {
       // Use Discord API directly (for webhook contexts)
@@ -171,9 +172,9 @@ async function removeDiscordRole(discordId: string, client?: Client): Promise<bo
       }
 
       // Ensure role ID is cached/fetched once
-      const roleId = await getMenteeRoleId();
+      const roleId = await getRoleIdByName(roleName);
       if (!roleId) {
-        console.error('1-on-1 Mentee role not found in server');
+        console.error(`${roleName} role not found in server`);
         return false;
       }
 
@@ -188,7 +189,7 @@ async function removeDiscordRole(discordId: string, client?: Client): Promise<bo
         }
       );
 
-      console.log(`✅ Removed 1-on-1 Mentee role from ${discordId}`);
+      console.log(`✅ Removed ${roleName} role from ${discordId}`);
       return true;
     }
   } catch (error) {

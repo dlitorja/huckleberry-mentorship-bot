@@ -60,6 +60,11 @@ fly secrets set SUPABASE_SERVICE_ROLE_KEY="your_service_key"
 fly secrets set RESEND_API_KEY="your_resend_key"
 fly secrets set RESEND_FROM_EMAIL="noreply@yourdomain.com"
 fly secrets set DISCORD_REDIRECT_URI="https://your-app-name.fly.dev/oauth/callback"
+fly secrets set DEFAULT_SESSIONS_PER_PURCHASE="4"
+# Optional but recommended for branded short links:
+# fly secrets set SHORT_URL_BASE="https://links.yourdomain.com"
+# Optional for Fly domain fallback in short links:
+# fly secrets set FLY_APP_NAME="your-app-name"
 ```
 
 **Important:** Replace `your-app-name` in the `DISCORD_REDIRECT_URI` with your actual Fly.io app name.
@@ -207,6 +212,7 @@ npm run start:all
 - Verify redirect URI matches in Discord Developer Portal
 - Check `DISCORD_CLIENT_SECRET` is set correctly
 - Ensure `DISCORD_REDIRECT_URI` points to your Fly.io URL
+- Ensure email invite links include an OAuth `state` param and that your database has run migration `20251116130000_add_pending_joins_oauth_state.sql`
 
 ### App keeps restarting
 - Check logs for errors: `fly logs`
@@ -239,6 +245,7 @@ npm run start:all
 3. ✅ Rotate tokens periodically
 4. ✅ Use HTTPS for webhook endpoints (automatic on Fly.io)
 5. ✅ Limit Discord bot permissions to minimum required
+6. ✅ Use OAuth `state` validation (enabled by `pending_joins.oauth_state` migration)
 
 ---
 
@@ -258,4 +265,5 @@ Your bot should now be running 24/7 on Fly.io. The webhook server will handle Ka
 1. Send a test webhook to `/webhook/kajabi`
 2. Try Discord commands: `/liststudents`, `/sessionsummary`
 3. Test OAuth flow by clicking an invite link
+4. Confirm role assignment matches the offer's configured role (`kajabi_offers.discord_role_name`) for group or 1-on-1 offerings
 

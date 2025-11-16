@@ -214,8 +214,9 @@ async function handleReturningStudentRenewal(params: {
   instructorId: string;
   instructorName: string;
   existingMentee: { id: string; discord_id: string };
+  sessionsToAdd: number;
 }): Promise<{ message: string }> {
-  const { email, instructorId, instructorName, existingMentee } = params;
+  const { email, instructorId, instructorName, existingMentee, sessionsToAdd } = params;
 
   const { data: mentorship, error: mentorshipError } = await supabase
     .from('mentorships')
@@ -235,7 +236,7 @@ async function handleReturningStudentRenewal(params: {
         status: 'active'
       });
   } else {
-    const newSessionsRemaining = mentorship.sessions_remaining + CONFIG.DEFAULT_SESSIONS_PER_PURCHASE;
+    const newSessionsRemaining = mentorship.sessions_remaining + sessionsToAdd;
     const newTotalSessions = Math.max(mentorship.total_sessions, newSessionsRemaining);
     const wasEnded = mentorship.status === 'ended';
 
@@ -289,8 +290,11 @@ async function handleNewStudentPurchase(params: {
   offerName: string;
   offerPrice?: string | number | null;
   menteeName?: string | null;
+  transactionId?: string | number | null;
+  currency?: string | null;
+  sessionsPerPurchase: number;
 }): Promise<{ emailId?: string }> {
-  const { email, instructorId, instructorName, offerIdString, offerName, offerPrice, menteeName } = params;
+  const { email, instructorId, instructorName, offerIdString, offerName, offerPrice, menteeName, transactionId, currency, sessionsPerPurchase } = params;
 
   const oauthState = crypto.randomBytes(16).toString('hex');
   const oauthStateExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
@@ -355,12 +359,13 @@ async function handleNewStudentPurchase(params: {
     try {
       const { data: existingMentorship } = await supabase
         .from('mentorships')
-        .select('id, sessions_remaining, total_sessions, status, returned_after_end')
+        .select('id, sessions_remaining, total_sessions, status, returned_after_end, mentee_role_name')
         .eq('mentee_id', menteeId)
         .eq('instructor_id', instructorId)
         .maybeSingle();
 
-      const addSessions = CONFIG.DEFAULT_SESSIONS_PER_PURCHASE;
+      const addSessions = sessionsPerPurchase;
+      const roleNameForMentee = ((offerData as { discord_role_name?: string } | null)?.discord_role_name) || '1-on-1 Mentee';
 
       if (!existingMentorship) {
         const { error: createMentorshipError } = await supabase
@@ -370,7 +375,8 @@ async function handleNewStudentPurchase(params: {
             instructor_id: instructorId,
             sessions_remaining: addSessions,
             total_sessions: addSessions,
-            status: 'active'
+            status: 'active',
+            mentee_role_name: roleNameForMentee
           });
         if (createMentorshipError) {
           // If another webhook already created it (duplicate delivery), convert to additive update
@@ -427,7 +433,8 @@ async function handleNewStudentPurchase(params: {
             status: 'active',
             ended_at: null,
             end_reason: null,
-            returned_after_end: wasEnded ? true : existingMentorship.returned_after_end
+            returned_after_end: wasEnded ? true : existingMentorship.returned_after_end,
+            mentee_role_name: existingMentorship.mentee_role_name || roleNameForMentee
           })
           .eq('id', existingMentorship.id);
         if (updateMentorshipError) {
@@ -445,6 +452,26 @@ async function handleNewStudentPurchase(params: {
       });
       console.error('[webhook] Exception during mentorship ensure:', e);
     }
+  }
+
+  // 3) Record purchase (idempotent on transaction_id if available)
+  try {
+    await supabase
+      .from('purchases')
+      .upsert(
+        {
+          email: email.toLowerCase(),
+          instructor_id: instructorId,
+          offer_id: offerIdString,
+          transaction_id: transactionId ? String(transactionId) : null,
+          amount_paid_decimal: offerPrice != null ? Number(offerPrice) : null,
+          currency: currency ?? null,
+          purchased_at: new Date().toISOString(),
+        },
+        { onConflict: 'transaction_id' }
+      );
+  } catch (e) {
+    console.error('[webhook] Failed to record purchase:', e);
   }
 
   const inviteLink = `https://discord.com/api/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.DISCORD_REDIRECT_URI!)}&response_type=code&scope=identify%20email%20guilds.join&state=${encodeURIComponent(oauthState)}`;
@@ -481,7 +508,7 @@ app.post('/webhook/kajabi', async (req, res) => {
     // Lookup the instructor for this offer
     const { data: offerData, error: offerError } = await supabase
       .from('kajabi_offers')
-      .select('instructor_id, offer_name, instructors(name)')
+      .select('instructor_id, offer_name, sessions_per_purchase, discord_role_name, mentorship_type, instructors(name)')
       .eq('offer_id', offerIdString)
       .single();
 
@@ -502,10 +529,17 @@ app.post('/webhook/kajabi', async (req, res) => {
     // Get instructor name for personalized messages
     const instructorName = (offerData as { instructors?: { name?: string } } | null)?.instructors?.name || 'your instructor';
 
-    // Extract price from webhook payload (if available)
+    // Extract price and currency from webhook payload (if available)
     const offerPrice = req.body.payment_transaction?.amount_paid_decimal || 
                        req.body.payload?.amount_paid_decimal || 
                        req.body.order?.order_items?.[0]?.unit_cost_decimal;
+    const currency = req.body.payment_transaction?.currency || 
+                     req.body.payload?.currency ||
+                     req.body.currency || 'USD';
+    const transactionId = req.body.transaction_id || req.body.payload?.transaction_id || req.body.order?.id || null;
+
+    // Sessions per purchase: honor offer override, else default
+    const sessionsPerPurchase = Number((offerData as { sessions_per_purchase?: number } | null)?.sessions_per_purchase) || CONFIG.DEFAULT_SESSIONS_PER_PURCHASE;
 
     // Check if this is a returning/existing student
     const { data: existingMentee } = await supabase
@@ -521,6 +555,7 @@ app.post('/webhook/kajabi', async (req, res) => {
         instructorId: offerData.instructor_id,
         instructorName,
         existingMentee: { id: existingMentee.id, discord_id: existingMentee.discord_id },
+        sessionsToAdd: sessionsPerPurchase,
       });
 
       return res.json({
@@ -546,6 +581,9 @@ app.post('/webhook/kajabi', async (req, res) => {
         offerIdString,
         offerName: ((offerData as { offer_name?: string } | null)?.offer_name) || 'Unknown Offer',
         offerPrice,
+        transactionId,
+        currency,
+        sessionsPerPurchase,
         menteeName,
       });
 
@@ -625,13 +663,28 @@ app.post('/webhook/kajabi/cancellation', async (req, res) => {
       reason = 'Subscription expired';
     }
 
+    // Resolve mentee role name from active mentorship (fallback to default)
+    let menteeRoleName = '1-on-1 Mentee';
+    try {
+      const { data: activeMentorship } = await supabase
+        .from('mentorships')
+        .select('mentee_role_name')
+        .eq('mentee_id', menteeData.id)
+        .eq('status', 'active')
+        .maybeSingle();
+      if (activeMentorship?.mentee_role_name) {
+        menteeRoleName = activeMentorship.mentee_role_name;
+      }
+    } catch {}
+
     // Remove student role
     const result = await removeStudentRole({
       menteeDiscordId: menteeData.discord_id,
       reason,
       sendGoodbyeDm: true,
       notifyAdmin: true,
-      client: undefined // Use API method since we don't have client in webhook context
+      client: undefined, // Use API method since we don't have client in webhook context
+      roleName: menteeRoleName
     });
 
     if (result.success) {

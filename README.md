@@ -10,7 +10,9 @@ A comprehensive Discord bot and webhook system for managing 1-on-1 mentorship pr
 - **Session Management**: Track sessions with date tracking, notes, and resource links
 - **Recurring Students**: Automatically handles returning students with session banking
 - **Student Removal**: Automatic role removal on cancellations/refunds via Kajabi webhooks, plus manual admin control
+- **Group & 1:Many Support (new)**: Per-offer role names and mentorship types allow group offerings in addition to 1-on-1
 - **URL Shortener & Analytics**: Create branded short links with detailed click tracking and analytics.
+- **Alumni & Testimonials**: Alumni analytics view and automated testimonial requests (quick-win path live)
 
 ### 💬 Discord Commands
 - **Instructor Commands**: `/session`, `/addsessions`, `/liststudents`, `/sessionsummary`, `/addnote`, `/viewnotes`, `/addlink`, `/shortenurl`, `/urlstats`, `/urllist`, `/urldelete`
@@ -112,7 +114,7 @@ SUPPORT_EMAIL=support@yourdomain.com
 
 ## Database Setup
 
-The bot uses multiple Supabase tables. Run the SQL files in the `database/` directory in order:
+The bot uses multiple Supabase tables. Apply the SQL in `database/` first, then the newer incremental migrations in `supabase/migrations/`:
 
 1. **`database/schema.sql`** - Core tables (instructors, mentees, mentorships, pending_joins, kajabi_offers)
 2. **`database/add_session_tracking.sql`** - Adds `last_session_date` column
@@ -120,6 +122,11 @@ The bot uses multiple Supabase tables. Run the SQL files in the `database/` dire
 4. **`database/add_mentorship_status.sql`** - Adds status tracking for ended mentorships
 5. **`database/add_url_shortener.sql`** - Adds tables for the URL shortener.
 6. **`database/insert_kajabi_offers.sql`** - Populate your Kajabi offer mappings
+7. **`supabase/migrations/20251116130000_add_pending_joins_oauth_state.sql`** - Adds OAuth `state` fields to `pending_joins` for CSRF protection
+8. **`supabase/migrations/20251116135000_add_testimonial_columns.sql`** - Adds `testimonial_requested_at` and `testimonial_submitted` to `mentorships`
+9. **`supabase/migrations/20251116135000_offer_sessions_and_purchases.sql`** - Adds `kajabi_offers.sessions_per_purchase` and a `purchases` audit table
+10. **`supabase/migrations/20251116140000_group_roles.sql`** - Adds `kajabi_offers.mentorship_type`, `kajabi_offers.discord_role_name`, and `mentorships.mentee_role_name`
+11. **`supabase/migrations/20251116120000_alumni_and_testimonial.sql`** - Alumni tracking helpers and `alumni_export` view
 
 **Key Tables:**
 - `instructors` - Instructor profiles with Discord IDs
@@ -131,6 +138,8 @@ The bot uses multiple Supabase tables. Run the SQL files in the `database/` dire
 - `session_links` - Resource links attached to sessions
 - `shortened_urls` - Stores short links and metadata
 - `url_analytics` - Tracks click data for each short link
+- `purchases` - Idempotent ledger of processed purchases
+- `alumni_export` (view) - Convenience view for exporting ended mentorships analytics
 
 See `database/schema.sql` for complete schema details.
 
@@ -294,8 +303,8 @@ fly secrets set DISCORD_BOT_TOKEN=your_token
 1. **Purchase** - Student buys 1-on-1 mentorship on Kajabi
 2. **Webhook** - Kajabi sends webhook to your server at `/webhook/kajabi`
 3. **Email** - System sends Discord invite email with OAuth link via Resend
-4. **OAuth** - Student clicks link, authenticates with Discord
-5. **Role Assignment** - Bot assigns "1-on-1 Mentee" role and creates mentorship record
+4. **OAuth** - Student clicks link, authenticates with Discord (with CSRF-protected `state` validation)
+5. **Role Assignment** - Bot assigns the role mapped to the purchased offer (e.g., "1-on-1 Mentee" or a group role) and creates/updates mentorship
 6. **Welcome DM** - Bot sends welcome message with instructor info
 7. **Admin Notification** - Admin receives email with purchase details
 
@@ -303,7 +312,7 @@ fly secrets set DISCORD_BOT_TOKEN=your_token
 
 1. **Purchase** - Existing student repurchases
 2. **Detection** - System recognizes email/Discord ID
-3. **Session Update** - Adds sessions to existing account (allows banking)
+3. **Session Update** - Adds sessions to existing account (allows banking). Uses `kajabi_offers.sessions_per_purchase` when configured, else falls back to `DEFAULT_SESSIONS_PER_PURCHASE`.
 4. **Notifications** - Student, instructor, and admin all receive renewal notifications
 
 ### Session Management
