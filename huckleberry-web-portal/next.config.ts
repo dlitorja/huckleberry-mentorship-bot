@@ -15,40 +15,35 @@ const nextConfig: NextConfig = {
   // Set outputFileTracingRoot to silence the warning about multiple lockfiles
   outputFileTracingRoot: path.join(__dirname),
   // Ensure webpack resolves path aliases correctly
-  webpack: (config, { isServer }) => {
-    // Resolve path aliases - ensure @ points to the web portal root
-    const webPortalRoot = path.resolve(__dirname);
+  // Next.js should automatically use tsconfig.json paths, but we ensure webpack also knows about them
+  webpack: (config, { dir, isServer }) => {
+    // Use the dir parameter which Next.js provides - it's the project root
+    // Fallback to __dirname if dir is not available
+    const webPortalRoot = dir || __dirname;
     
+    // Ensure resolve exists
     if (!config.resolve) {
       config.resolve = {};
     }
-    if (!config.resolve.alias) {
-      config.resolve.alias = {};
-    }
     
-    // Set up @ alias to point to web portal root
+    // Preserve existing aliases
+    const existingAliases = config.resolve.alias || {};
+    
+    // Set up path aliases - use absolute paths
     config.resolve.alias = {
-      ...config.resolve.alias,
-      '@': webPortalRoot,
+      ...existingAliases,
+      '@': path.resolve(webPortalRoot),
     };
     
-    // Ensure extensions are resolved in correct order
+    // Ensure extensions include TypeScript
+    if (!config.resolve.extensions) {
+      config.resolve.extensions = [];
+    }
+    const extensions = ['.tsx', '.ts', '.jsx', '.js', '.json'];
     config.resolve.extensions = [
-      '.tsx',
-      '.ts',
-      '.jsx',
-      '.js',
-      '.json',
-      ...(config.resolve.extensions || []),
+      ...extensions.filter(ext => !config.resolve.extensions.includes(ext)),
+      ...config.resolve.extensions,
     ];
-    
-    // Ensure modules are resolved from web portal root
-    if (!config.resolve.modules) {
-      config.resolve.modules = [];
-    }
-    if (!config.resolve.modules.includes(webPortalRoot)) {
-      config.resolve.modules = [webPortalRoot, 'node_modules', ...config.resolve.modules];
-    }
     
     return config;
   },
