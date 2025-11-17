@@ -266,18 +266,40 @@ async function sendInviteEmailAndNotifyAdmin(params: {
   inviteLink: string;
   offerName: string;
   offerPrice?: string | number | null;
+  mentorshipType?: string | null;
+  discordRoleName?: string | null;
 }): Promise<{ emailId?: string }> {
-  const { email, instructorName, inviteLink, offerName, offerPrice } = params;
+  const { email, instructorName, inviteLink, offerName, offerPrice, mentorshipType, discordRoleName } = params;
+
+  // Determine if this is a group mentorship
+  const isGroupMentorship = mentorshipType?.toLowerCase() === 'group' || 
+                           mentorshipType?.toLowerCase() === 'group mentorship' ||
+                           (discordRoleName && discordRoleName.toLowerCase().includes('group'));
+
+  // Dynamic content based on mentorship type
+  const welcomeTitle = isGroupMentorship 
+    ? 'Welcome to Your Group Mentorship Program! 🎉' 
+    : 'Welcome to Your 1-on-1 Mentorship Program! 🎉';
+  const welcomeHeading = isGroupMentorship 
+    ? 'Welcome to Your Group Mentorship!' 
+    : 'Welcome to Your 1-on-1 Mentorship!';
+  const purchaseMessage = isGroupMentorship
+    ? 'Thank you for purchasing your group mentorship! We\'re excited to have you join our community.'
+    : 'Thank you for purchasing your 1-on-1 mentorship! We\'re excited to have you join our community.';
+  const roleName = discordRoleName || (isGroupMentorship ? 'Group Mentee' : '1-on-1 Mentee');
+  const connectMessage = isGroupMentorship
+    ? 'Click the button below to join our Discord community and connect with your instructor and fellow mentees:'
+    : 'Click the button below to join our Discord community and connect with your instructor:';
 
   const { data: emailData, error: emailError } = await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL!,
     to: email,
-    subject: 'Welcome to Your 1-on-1 Mentorship Program! 🎉',
+    subject: welcomeTitle,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <h1 style="color: #5865F2;">Welcome to Your 1-on-1 Mentorship!</h1>
+        <h1 style="color: #5865F2;">${welcomeHeading}</h1>
         <p style="font-size: 16px; line-height: 1.6;">
-          Thank you for purchasing your 1-on-1 mentorship! We're excited to have you join our community.
+          ${purchaseMessage}
         </p>
         <div style="background-color: #f0f7ff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #5865F2;">
           <p style="margin: 0; font-size: 16px;">
@@ -286,7 +308,7 @@ async function sendInviteEmailAndNotifyAdmin(params: {
         </div>
         <h2 style="color: #333; font-size: 20px;">Next Step: Join Our Discord Server</h2>
         <p style="font-size: 15px; line-height: 1.6;">
-          Click the button below to join our Discord community and connect with your instructor:
+          ${connectMessage}
         </p>
         <div style="text-align: center; margin: 30px 0;">
           <a href="${inviteLink}" style="display: inline-block; padding: 15px 32px; background-color: #5865F2; color: white; text-decoration: none; border-radius: 5px; font-size: 16px; font-weight: bold;">
@@ -298,7 +320,7 @@ async function sendInviteEmailAndNotifyAdmin(params: {
             <strong>⚠️ Already in our Discord server?</strong>
           </p>
           <p style="margin: 10px 0 0 0; font-size: 14px;">
-            You still need to click the link above! This will link your account to your purchase and automatically assign you the "1-on-1 Mentee" role.
+            You still need to click the link above! This will link your account to your purchase and automatically assign you the "${roleName}" role.
           </p>
         </div>
         <p style="font-size: 14px; color: #666; line-height: 1.6;">
@@ -427,8 +449,9 @@ async function handleNewStudentPurchase(params: {
   currency?: string | null;
   sessionsPerPurchase: number;
   discordRoleName?: string | null;
+  mentorshipType?: string | null;
 }): Promise<{ emailId?: string }> {
-  const { email, instructorId, instructorName, offerIdString, offerName, offerPrice, menteeName, transactionId, currency, sessionsPerPurchase, discordRoleName } = params;
+  const { email, instructorId, instructorName, offerIdString, offerName, offerPrice, menteeName, transactionId, currency, sessionsPerPurchase, discordRoleName, mentorshipType } = params;
 
   const oauthState = crypto.randomBytes(16).toString('hex');
   const oauthStateExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
@@ -568,6 +591,8 @@ async function handleNewStudentPurchase(params: {
     inviteLink,
     offerName,
     offerPrice,
+    mentorshipType,
+    discordRoleName,
   });
 
   return { emailId };
@@ -807,6 +832,7 @@ app.post('/webhook/kajabi', webhookRateLimitMiddleware, verifyWebhook, async (re
             sessionsPerPurchase,
             menteeName,
             discordRoleName: ((offerData as { discord_role_name?: string } | null)?.discord_role_name) || null,
+            mentorshipType: ((offerData as { mentorship_type?: string } | null)?.mentorship_type) || null,
           });
         },
         { email, offerId: offerIdString, instructorId: offerData.instructor_id }

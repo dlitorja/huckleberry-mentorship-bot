@@ -50,8 +50,8 @@ export async function POST(req: NextRequest) {
       const fileExtension = file.name.split(".").pop()?.toLowerCase() || "jpg";
       const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
       
-      // Upload to public assets bucket
-      const path = `landing-page-assets/${assetId}-${sanitizedName}`;
+      // Upload to public assets bucket (path is just the filename, bucket is specified in .from())
+      const path = `${assetId}-${sanitizedName}`;
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
 

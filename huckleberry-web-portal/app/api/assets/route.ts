@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/lib/supabase";
 import { getToken } from "next-auth/jwt";
-import { randomUUID } from "crypto";
 
 export async function GET(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
@@ -39,9 +38,10 @@ export async function GET(req: NextRequest) {
           .getPublicUrl(file.name);
 
         // Extract original filename (everything after the UUID and first dash)
+        // Format: {uuid}-{sanitized-filename}
         const nameParts = file.name.split("-");
         const originalName = nameParts.length > 1 ? nameParts.slice(1).join("-") : file.name;
-        const assetId = nameParts[0] || randomUUID();
+        const assetId = nameParts[0] || file.name; // Fallback to full filename if no UUID found
 
         return {
           id: assetId,
@@ -60,13 +60,5 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-function randomUUID(): string {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
 }
 
