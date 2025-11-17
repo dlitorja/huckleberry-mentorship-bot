@@ -16,35 +16,29 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(process.cwd()),
   // Ensure webpack resolves path aliases correctly
   // Next.js 15 should read from tsconfig.json automatically, but we explicitly configure webpack
-  webpack: (config, { dir, isServer }) => {
-    // dir is the project root (huckleberry-web-portal directory)
-    const projectRoot = path.resolve(dir);
+  webpack: (config, { dir }) => {
+    // Get the project root - dir should be the huckleberry-web-portal directory
+    // Use path.resolve to ensure we have an absolute path
+    const projectRoot = path.resolve(dir || process.cwd());
     
     // Ensure resolve configuration exists
     config.resolve = config.resolve || {};
     config.resolve.alias = config.resolve.alias || {};
     
-    // Set up @ alias to point to project root (absolute path)
-    // This allows imports like @/lib/utils to resolve to <projectRoot>/lib/utils
-    // Important: Use absolute path and ensure it works for both client and server bundles
-    const alias = {
-      ...config.resolve.alias,
-      '@': projectRoot,
-    };
+    // Set up @ alias - this is critical for @/lib/utils to work
+    // The alias must point to the absolute path of the project root
+    config.resolve.alias['@'] = projectRoot;
     
-    // Set the alias object
-    config.resolve.alias = alias;
-    
-    // Ensure extensions are configured for TypeScript files
-    if (!config.resolve.extensions) {
-      config.resolve.extensions = [];
+    // Also ensure modules includes the project root
+    if (!config.resolve.modules) {
+      config.resolve.modules = [];
     }
-    const requiredExtensions = ['.tsx', '.ts', '.jsx', '.js', '.json'];
-    const existingExtensions = config.resolve.extensions;
-    config.resolve.extensions = [
-      ...requiredExtensions.filter(ext => !existingExtensions.includes(ext)),
-      ...existingExtensions,
-    ];
+    if (Array.isArray(config.resolve.modules)) {
+      // Add project root to modules if not already present
+      if (!config.resolve.modules.includes(projectRoot)) {
+        config.resolve.modules = [projectRoot, ...config.resolve.modules];
+      }
+    }
     
     return config;
   },
