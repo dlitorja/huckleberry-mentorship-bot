@@ -80,7 +80,7 @@ jobs:
       
       - name: Install web portal dependencies
         working-directory: huckleberry-web-portal
-        run: npm ci
+        run: npm install
       
       - name: Build web portal
         working-directory: huckleberry-web-portal
