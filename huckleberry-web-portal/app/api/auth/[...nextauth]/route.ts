@@ -22,8 +22,8 @@ const handler = NextAuth({
       return token;
     },
     async session({ session, token }) {
-      (session as any).discordId = (token as any).discordId;
-      (session as any).role = (token as any).role;
+      session.discordId = token.discordId;
+      session.role = token.role;
       return session;
     }
   }
