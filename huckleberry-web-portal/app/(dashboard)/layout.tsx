@@ -3,21 +3,13 @@ import type { ReactNode } from "react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SignOutButton } from "@/components/SignOutButton";
 import { SearchBar } from "@/components/SearchBar";
-import { getToken } from "next-auth/jwt";
-import { cookies } from "next/headers";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
-  const cookieStore = await cookies();
-  const token = await getToken({ 
-    req: {
-      headers: {
-        cookie: cookieStore.toString(),
-      },
-    } as { headers: { cookie: string } },
-    secret: process.env.NEXTAUTH_SECRET 
-  });
+  const session = await getServerSession(authOptions);
   
-  const role = String(token?.role || "unknown");
+  const role = String((session as any)?.role || "unknown");
   const isInstructorOrAdmin = role === "instructor" || role === "admin";
 
   return (

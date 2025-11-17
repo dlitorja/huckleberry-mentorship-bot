@@ -1,8 +1,8 @@
-import NextAuth from "next-auth";
+import NextAuth, { type NextAuthOptions } from "next-auth";
 import DiscordProvider from "next-auth/providers/discord";
 import { getUserRoleByDiscordId } from "@/lib/auth";
 
-const handler = NextAuth({
+export const authOptions: NextAuthOptions = {
   providers: [
     DiscordProvider({
       clientId: process.env.DISCORD_CLIENT_ID || "",
@@ -37,7 +37,9 @@ const handler = NextAuth({
     signIn: "/login",
     error: "/login"
   }
-});
+};
+
+const handler = NextAuth(authOptions);
 
 export { handler as GET, handler as POST };
 

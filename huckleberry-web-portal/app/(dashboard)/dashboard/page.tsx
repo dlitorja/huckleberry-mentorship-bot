@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { getToken } from "next-auth/jwt";
-import { cookies } from "next/headers";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 
 type MentorshipData = {
   id: string;
@@ -44,17 +44,9 @@ async function getMenteeMentorship(): Promise<MentorshipData | null> {
 }
 
 export default async function DashboardPage() {
-  const cookieStore = await cookies();
-  const token = await getToken({ 
-    req: {
-      headers: {
-        cookie: cookieStore.toString(),
-      },
-    } as { headers: { cookie: string } },
-    secret: process.env.NEXTAUTH_SECRET 
-  });
+  const session = await getServerSession(authOptions);
   
-  const role = String(token?.role || "unknown");
+  const role = String((session as any)?.role || "unknown");
   const isInstructorOrAdmin = role === "instructor" || role === "admin";
   const isStudent = role === "student";
   
