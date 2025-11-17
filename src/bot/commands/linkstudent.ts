@@ -3,6 +3,10 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
 import { CONFIG, getSupportContactString } from '../../config/constants.js';
+import { executeWithErrorHandling, handleAsyncError } from '../../utils/commandErrorHandler.js';
+import { measurePerformance } from '../../utils/performance.js';
+import { validateEmail } from '../../utils/validation.js';
+import { logger } from '../../utils/logger.js';
 
 export const data = new SlashCommandBuilder()
   .setName('linkstudent')
@@ -20,7 +24,7 @@ export const data = new SlashCommandBuilder()
       .setRequired(true)
   );
 
-export async function execute(interaction: ChatInputCommandInteraction) {
+async function executeCommand(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   // Admin check
@@ -36,44 +40,57 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  const email = interaction.options.getString('email', true).toLowerCase();
+  // Validate and sanitize email
+  const rawEmail = interaction.options.getString('email', true);
+  let email: string;
+  try {
+    email = validateEmail(rawEmail, 'email');
+  } catch (validationError) {
+    await interaction.editReply(`❌ Invalid email format: ${validationError instanceof Error ? validationError.message : 'Unknown error'}`);
+    return;
+  }
+
   const discordUser = interaction.options.getUser('discorduser', true);
 
-  // Find pending join by email
-  const { data: pendingJoin, error: findError } = await supabase
-    .from('pending_joins')
-    .select('*, instructors(discord_id, name)')
-    .eq('email', email)
-    .is('discord_user_id', null)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single();
+  // Find pending join by email with performance monitoring
+  const pendingJoin = await measurePerformance(
+    'linkstudent.find_pending_join',
+    async () => {
+      const { data, error } = await supabase
+        .from('pending_joins')
+        .select('*, instructors(discord_id, name)')
+        .eq('email', email)
+        .is('discord_user_id', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
 
-  if (findError || !pendingJoin) {
-    await interaction.editReply(
-      `❌ No pending join found for email: ${email}\n\n` +
-      `This could mean:\n` +
-      `• The email doesn't match any purchase\n` +
-      `• The student has already been linked\n` +
-      `• The email was typed incorrectly`
-    );
-    return;
-  }
+      if (error || !data) {
+        throw new Error(`No pending join found for email: ${email}`);
+      }
+      return data;
+    },
+    { email }
+  );
 
   // Update pending join with Discord user ID
-  const { error: updateError } = await supabase
-    .from('pending_joins')
-    .update({
-      discord_user_id: discordUser.id,
-      joined_at: new Date().toISOString()
-    })
-    .eq('id', pendingJoin.id);
+  await measurePerformance(
+    'linkstudent.update_pending_join',
+    async () => {
+      const { error: updateError } = await supabase
+        .from('pending_joins')
+        .update({
+          discord_user_id: discordUser.id,
+          joined_at: new Date().toISOString()
+        })
+        .eq('id', pendingJoin.id);
 
-  if (updateError) {
-    console.error('Failed to link student:', updateError);
-    await interaction.editReply(`❌ Failed to link student. Database error: ${updateError.message}`);
-    return;
-  }
+      if (updateError) {
+        throw new Error(`Failed to link student: ${updateError.message}`);
+      }
+    },
+    { pendingJoinId: pendingJoin.id, discordUserId: discordUser.id }
+  );
 
   // Find and assign the "1-on-1 Mentee" role
   const guild = interaction.guild;
@@ -88,87 +105,100 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
     if (role) {
       await member.roles.add(role);
-      console.log(`✅ Manually assigned "1-on-1 Mentee" role to ${discordUser.tag}`);
+      logger.info('Manually assigned role to student', { 
+        discordUserId: discordUser.id, 
+        roleName: role.name 
+      });
     } else {
-      console.error('Could not find "1-on-1 Mentee" role');
+      logger.warn('Could not find "1-on-1 Mentee" role', { guildId: guild.id });
     }
 
-    // Send welcome DM to student
-    try {
-      const instructorMention = (pendingJoin as any).instructors?.discord_id 
-        ? `<@${(pendingJoin as any).instructors.discord_id}>` 
-        : (pendingJoin as any).instructors?.name || 'your instructor';
-        
-      await discordUser.send(
+    // Send welcome DM to student (fire-and-forget)
+    const instructorMention = (pendingJoin as any).instructors?.discord_id 
+      ? `<@${(pendingJoin as any).instructors.discord_id}>` 
+      : (pendingJoin as any).instructors?.name || 'your instructor';
+      
+    handleAsyncError(
+      discordUser.send(
         `Welcome to the ${CONFIG.ORGANIZATION_NAME} Community! 🎉\n\n` +
         `You've been assigned the "1-on-1 Mentee" role -- this is needed so you can access the mentorship voice channels!\n\n` +
         `Your instructor is ${instructorMention}\n\n` +
         `Please inform them of your schedule so they can check their availability -- please include your time zone, as all our instructors and students are all over the world!\n\n` +
         `Your account has been manually linked by an admin.\n\n` +
         `Having any issues? ${getSupportContactString()}`
-      );
-      console.log('✅ Welcome DM sent to manually linked student');
-    } catch (dmError) {
-      console.log('Could not send DM to student:', dmError);
-    }
+      ),
+      { commandName: 'linkstudent', operation: 'send_welcome_dm', discordUserId: discordUser.id }
+    );
 
-    // Send notification to instructor
+    // Send notification to instructor (fire-and-forget)
     if ((pendingJoin as any).instructors?.discord_id) {
-      try {
-        const instructor = await interaction.client.users.fetch((pendingJoin as any).instructors.discord_id);
-        await instructor.send(
-          `🎓 **New Mentee Assigned**\n\n` +
-          `${discordUser} (${email}) has been manually linked to your mentorship program.\n\n` +
-          `They're ready to get started!`
-        );
-        console.log('✅ Notification sent to instructor');
-      } catch (instructorDmError) {
-        console.log('Could not send DM to instructor:', instructorDmError);
-      }
+      handleAsyncError(
+        (async () => {
+          const instructor = await interaction.client.users.fetch((pendingJoin as any).instructors.discord_id);
+          await instructor.send(
+            `🎓 **New Mentee Assigned**\n\n` +
+            `${discordUser} (${email}) has been manually linked to your mentorship program.\n\n` +
+            `They're ready to get started!`
+          );
+        })(),
+        { commandName: 'linkstudent', operation: 'send_instructor_notification', instructorId: (pendingJoin as any).instructors.discord_id }
+      );
     }
 
-    // Create mentorship record if it doesn't exist
-    const { data: existingMentee } = await supabase
-      .from('mentees')
-      .select('id')
-      .eq('discord_id', discordUser.id)
-      .single();
+    // Create mentorship record if it doesn't exist (fire-and-forget)
+    handleAsyncError(
+      measurePerformance(
+        'linkstudent.create_mentorship',
+        async () => {
+          const { data: existingMentee } = await supabase
+            .from('mentees')
+            .select('id')
+            .eq('discord_id', discordUser.id)
+            .single();
 
-    if (!existingMentee) {
-      // Create mentee record
-      const { data: newMentee, error: menteeError } = await supabase
-        .from('mentees')
-        .insert({
-          discord_id: discordUser.id,
-          email: email
-        })
-        .select('id')
-        .single();
+          if (!existingMentee) {
+            // Create mentee record
+            const { data: newMentee, error: menteeError } = await supabase
+              .from('mentees')
+              .insert({
+                discord_id: discordUser.id,
+                email: email
+              })
+              .select('id')
+              .single();
 
-      if (!menteeError && newMentee) {
-        // Check if mentorship exists
-        const { data: existingMentorship } = await supabase
-          .from('mentorships')
-          .select('id')
-          .eq('mentee_id', newMentee.id)
-          .eq('instructor_id', pendingJoin.instructor_id)
-          .single();
+            if (!menteeError && newMentee) {
+              // Check if mentorship exists
+              const { data: existingMentorship } = await supabase
+                .from('mentorships')
+                .select('id')
+                .eq('mentee_id', newMentee.id)
+                .eq('instructor_id', pendingJoin.instructor_id)
+                .single();
 
-        if (!existingMentorship) {
-          // Create mentorship record with default sessions (you can adjust this)
-          await supabase
-            .from('mentorships')
-            .insert({
-              mentee_id: newMentee.id,
-              instructor_id: pendingJoin.instructor_id,
-              sessions_remaining: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE,
-              total_sessions: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE
-            });
-          
-          console.log('✅ Created mentorship record for manually linked student');
-        }
-      }
-    }
+              if (!existingMentorship) {
+                // Create mentorship record with default sessions
+                await supabase
+                  .from('mentorships')
+                  .insert({
+                    mentee_id: newMentee.id,
+                    instructor_id: pendingJoin.instructor_id,
+                    sessions_remaining: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE,
+                    total_sessions: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE
+                  });
+                
+                logger.info('Created mentorship record for manually linked student', {
+                  menteeId: newMentee.id,
+                  instructorId: pendingJoin.instructor_id,
+                });
+              }
+            }
+          }
+        },
+        { discordUserId: discordUser.id, email }
+      ),
+      { commandName: 'linkstudent', operation: 'create_mentorship' }
+    );
 
     await interaction.editReply(
       `✅ **Successfully linked!**\n\n` +
@@ -180,9 +210,11 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       `The student is now fully set up!`
     );
 
-  } catch (error) {
-    console.error('Error in manual linking:', error);
-    await interaction.editReply(`❌ An error occurred: ${error}`);
-  }
+}
+
+export async function execute(interaction: ChatInputCommandInteraction) {
+  await executeWithErrorHandling(interaction, executeCommand, {
+    commandName: 'linkstudent',
+  });
 }
 

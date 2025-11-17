@@ -14,7 +14,7 @@ import { createWebhookVerificationMiddleware } from '../utils/webhookSecurity.js
 import { atomicallyUpsertMentorship, atomicallyIncrementMentorshipSessions, checkAndMarkWebhookProcessed } from '../utils/databaseTransactions.js';
 import { discordApi } from '../utils/discordApi.js';
 import { logger } from '../utils/logger.js';
-import { validateEmail } from '../utils/validation.js';
+import { validateEmail, validateName, validateNumeric, validateCurrency, validateTransactionId } from '../utils/validation.js';
 import crypto from 'crypto';
 
 const app = express();
@@ -615,14 +615,49 @@ app.post('/webhook/kajabi', webhookRateLimitMiddleware, verifyWebhook, async (re
     // Get instructor name for personalized messages
     const instructorName = (offerData as { instructors?: { name?: string } } | null)?.instructors?.name || 'your instructor';
 
-    // Extract price and currency from webhook payload (if available)
-    const offerPrice = req.body.payment_transaction?.amount_paid_decimal || 
-                       req.body.payload?.amount_paid_decimal || 
-                       req.body.order?.order_items?.[0]?.unit_cost_decimal;
-    const currency = req.body.payment_transaction?.currency || 
-                     req.body.payload?.currency ||
-                     req.body.currency || 'USD';
-    const transactionId = req.body.transaction_id || req.body.payload?.transaction_id || req.body.order?.id || null;
+    // Extract and validate price and currency from webhook payload
+    const rawOfferPrice = req.body.payment_transaction?.amount_paid_decimal || 
+                          req.body.payload?.amount_paid_decimal || 
+                          req.body.order?.order_items?.[0]?.unit_cost_decimal;
+    const rawCurrency = req.body.payment_transaction?.currency || 
+                        req.body.payload?.currency ||
+                        req.body.currency || 'USD';
+    const rawTransactionId = req.body.transaction_id || req.body.payload?.transaction_id || req.body.order?.id || null;
+
+    // Validate and sanitize additional fields
+    let offerPrice: number | null = null;
+    let currency: string = 'USD';
+    let transactionId: string | null = null;
+
+    try {
+      offerPrice = validateNumeric(rawOfferPrice, 'offerPrice', 0, undefined, true);
+    } catch (validationError) {
+      logger.warn('Invalid offer price in webhook payload', {
+        rawOfferPrice,
+        error: validationError instanceof Error ? validationError.message : String(validationError),
+      });
+      // Continue with null price - not critical
+    }
+
+    try {
+      currency = validateCurrency(rawCurrency, 'currency');
+    } catch (validationError) {
+      logger.warn('Invalid currency in webhook payload, using USD', {
+        rawCurrency,
+        error: validationError instanceof Error ? validationError.message : String(validationError),
+      });
+      currency = 'USD'; // Default to USD
+    }
+
+    try {
+      transactionId = validateTransactionId(rawTransactionId, 'transaction_id');
+    } catch (validationError) {
+      logger.warn('Invalid transaction ID in webhook payload', {
+        rawTransactionId: typeof rawTransactionId === 'string' ? rawTransactionId.substring(0, 50) : rawTransactionId,
+        error: validationError instanceof Error ? validationError.message : String(validationError),
+      });
+      // Continue with null transaction ID - will be handled by deduplication logic
+    }
 
     // Sessions per purchase: honor offer override, else default
     const sessionsPerPurchase = Number((offerData as { sessions_per_purchase?: number } | null)?.sessions_per_purchase) || CONFIG.DEFAULT_SESSIONS_PER_PURCHASE;
@@ -673,12 +708,26 @@ app.post('/webhook/kajabi', webhookRateLimitMiddleware, verifyWebhook, async (re
 
     // NEW STUDENT FLOW
     try {
-      const menteeName =
+      // Extract and validate mentee name
+      const rawMenteeName =
         req.body.member?.name ||
         req.body.payload?.member_name ||
         (req.body.member_first_name && req.body.member_last_name
           ? `${req.body.member_first_name} ${req.body.member_last_name}`
           : req.body.member_first_name || req.body.member_last_name || null);
+      
+      let menteeName: string | null = null;
+      if (rawMenteeName) {
+        try {
+          menteeName = validateName(rawMenteeName, 'menteeName');
+        } catch (validationError) {
+          logger.warn('Invalid mentee name in webhook payload', {
+            rawMenteeName: typeof rawMenteeName === 'string' ? rawMenteeName.substring(0, 50) : rawMenteeName,
+            error: validationError instanceof Error ? validationError.message : String(validationError),
+          });
+          // Continue with null name - will use email fallback
+        }
+      }
 
       const { emailId } = await handleNewStudentPurchase({
         email,

@@ -11,14 +11,51 @@ import { logger } from './logger.js';
 type DiscordDmChannel = { id?: string };
 type DiscordRole = { id?: string; name?: string };
 
-let cachedRoleIds: Record<string, string> = {};
+// Role cache with TTL to prevent memory leaks
+interface RoleCacheEntry {
+  roleId: string;
+  expiresAt: number;
+}
+
+const cachedRoleIds: Map<string, RoleCacheEntry> = new Map();
+const ROLE_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+// Cleanup expired cache entries
+function cleanupRoleCache() {
+  const now = Date.now();
+  let cleaned = 0;
+  for (const [roleName, entry] of cachedRoleIds.entries()) {
+    if (entry.expiresAt <= now) {
+      cachedRoleIds.delete(roleName);
+      cleaned++;
+    }
+  }
+  if (cleaned > 0) {
+    logger.debug('Cleaned up expired role cache entries', { cleaned });
+  }
+}
+
+// Run cleanup every 30 minutes
+setInterval(cleanupRoleCache, 30 * 60 * 1000);
+
 async function getRoleIdByName(roleName: string): Promise<string | null> {
-  if (cachedRoleIds[roleName]) return cachedRoleIds[roleName];
+  const cached = cachedRoleIds.get(roleName);
+  const now = Date.now();
+  
+  // Return cached value if still valid
+  if (cached && cached.expiresAt > now) {
+    return cached.roleId;
+  }
+  
   try {
     const roleId = await discordApi.findRoleByName(roleName);
     if (roleId) {
-      cachedRoleIds[roleName] = roleId;
-      return cachedRoleIds[roleName];
+      // Cache with TTL
+      cachedRoleIds.set(roleName, {
+        roleId,
+        expiresAt: now + ROLE_CACHE_TTL_MS,
+      });
+      return roleId;
     }
   } catch (err) {
     logger.error('Failed to fetch Discord role by name', err instanceof Error ? err : new Error(String(err)), {

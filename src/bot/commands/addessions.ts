@@ -3,8 +3,9 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
 import { getMentorshipByDiscordIds } from '../../utils/mentorship.js';
-import { validatePositiveInteger, ValidationError } from '../../utils/validation.js';
-import { handleError } from '../../utils/errors.js';
+import { validatePositiveInteger } from '../../utils/validation.js';
+import { executeWithErrorHandling } from '../../utils/commandErrorHandler.js';
+import { measurePerformance } from '../../utils/performance.js';
 
 export const data = new SlashCommandBuilder()
   .setName('addsessions')
@@ -24,53 +25,58 @@ export const data = new SlashCommandBuilder()
       .setMaxValue(100)
   );
 
-export async function execute(interaction: ChatInputCommandInteraction) {
+async function executeCommand(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  try {
-    const student = interaction.options.getUser('student', true);
-    const instructorDiscordId = interaction.user.id;
-    const amountInput = interaction.options.getInteger('amount', true);
+  const student = interaction.options.getUser('student', true);
+  const instructorDiscordId = interaction.user.id;
+  const amountInput = interaction.options.getInteger('amount', true);
 
-    // Validate amount
-    const amount = validatePositiveInteger(amountInput, 'amount', 1, 100);
+  // Validate amount
+  const amount = validatePositiveInteger(amountInput, 'amount', 1, 100);
 
-  // Optimized mentorship lookup
-  const { data, error } = await getMentorshipByDiscordIds({
-    instructorDiscordId,
-    menteeDiscordId: student.id,
-    status: 'active'
+  // Optimized mentorship lookup with performance monitoring
+  const mentorshipData = await measurePerformance(
+    'addsessions.mentorship_lookup',
+    async () => {
+      const { data, error } = await getMentorshipByDiscordIds({
+        instructorDiscordId,
+        menteeDiscordId: student.id,
+        status: 'active'
+      });
+
+      if (error || !data) {
+        throw new Error(`Could not find a mentorship record for ${student.tag}`);
+      }
+      return data;
+    },
+    { instructorDiscordId, menteeDiscordId: student.id }
+  );
+
+  const newRemaining = mentorshipData.sessions_remaining + amount;
+  const newTotal = Math.max(mentorshipData.total_sessions, newRemaining);
+
+  // Update sessions with performance monitoring
+  await measurePerformance(
+    'addsessions.update_sessions',
+    async () => {
+      const { error: updateError } = await supabase
+        .from('mentorships')
+        .update({ sessions_remaining: newRemaining, total_sessions: newTotal })
+        .eq('id', mentorshipData.id);
+
+      if (updateError) {
+        throw new Error(`Failed to update sessions: ${updateError.message}`);
+      }
+    },
+    { mentorshipId: mentorshipData.id, amount }
+  );
+
+  await interaction.editReply(`✅ ${student.tag} now has ${newRemaining}/${newTotal} sessions.`);
+}
+
+export async function execute(interaction: ChatInputCommandInteraction) {
+  await executeWithErrorHandling(interaction, executeCommand, {
+    commandName: 'addsessions',
   });
-
-  if (error || !data) {
-    console.error('Mentorship lookup error:', error);
-    await interaction.editReply(`Could not find a mentorship record for ${student.tag}.`);
-    return;
-  }
-
-    const newRemaining = data.sessions_remaining + amount;
-    const newTotal = Math.max(data.total_sessions, newRemaining);
-
-    const { error: updateError } = await supabase
-      .from('mentorships')
-      .update({ sessions_remaining: newRemaining, total_sessions: newTotal })
-      .eq('id', data.id);
-
-    if (updateError) {
-      console.error('Failed to update sessions:', updateError);
-      await interaction.editReply(`❌ Failed to update sessions for ${student.tag}.`);
-      return;
-    }
-
-    await interaction.editReply(`✅ ${student.tag} now has ${newRemaining}/${newTotal} sessions.`);
-  } catch (error) {
-    const appError = handleError(error, 'addsessions command');
-    
-    if (appError instanceof ValidationError) {
-      await interaction.editReply(`❌ ${appError.message}`);
-    } else {
-      console.error('Unexpected error in addsessions:', appError);
-      await interaction.editReply(`❌ An unexpected error occurred: ${appError.message}`);
-    }
-  }
 }

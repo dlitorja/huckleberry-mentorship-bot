@@ -2,37 +2,58 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
+import { executeWithErrorHandling } from '../../utils/commandErrorHandler.js';
+import { measurePerformance } from '../../utils/performance.js';
 
 export const data = new SlashCommandBuilder()
   .setName('liststudents')
   .setDescription('List all your students and remaining sessions.');
 
-export async function execute(interaction: ChatInputCommandInteraction) {
+async function executeCommand(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const instructorDiscordId = interaction.user.id;
 
-  // Lookup instructor UUID
-  const { data: instructorData, error: instructorError } = await supabase
-    .from('instructors')
-    .select('id')
-    .eq('discord_id', instructorDiscordId)
-    .single();
+  // Lookup instructor UUID with performance monitoring
+  const instructorData = await measurePerformance(
+    'liststudents.instructor_lookup',
+    async () => {
+      const { data, error } = await supabase
+        .from('instructors')
+        .select('id')
+        .eq('discord_id', instructorDiscordId)
+        .single();
 
-  if (instructorError || !instructorData) {
-    console.error('Instructor lookup error:', instructorError);
-    await interaction.editReply('Instructor not found in the database.');
-    return;
-  }
+      if (error || !data) {
+        throw new Error(`Instructor not found: ${error?.message || 'Unknown error'}`);
+      }
+      return data;
+    },
+    { instructorDiscordId }
+  );
 
-  const { data, error } = await supabase
-    .from('mentorships')
-    .select('mentee_id, sessions_remaining, total_sessions, last_session_date, status, mentees(discord_id)')
-    .eq('instructor_id', instructorData.id)
-    .eq('status', 'active');  // Only show active mentorships
+  // Fetch mentorships with performance monitoring
+  const data = await measurePerformance(
+    'liststudents.mentorships_lookup',
+    async () => {
+      const { data, error } = await supabase
+        .from('mentorships')
+        .select('mentee_id, sessions_remaining, total_sessions, last_session_date, status, mentees(discord_id)')
+        .eq('instructor_id', instructorData.id)
+        .eq('status', 'active');  // Only show active mentorships
 
-  if (error || !data || data.length === 0) {
-    console.error('Mentorships lookup error:', error);
+      if (error) {
+        throw new Error(`Failed to fetch mentorships: ${error.message}`);
+      }
+      if (!data || data.length === 0) {
+        return [];
+      }
+      return data;
+    },
+    { instructorId: instructorData.id }
+  );
+
+  if (data.length === 0) {
     await interaction.editReply('No students found.');
     return;
   }
@@ -61,4 +82,10 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   await interaction.editReply(finalMessage);
+}
+
+export async function execute(interaction: ChatInputCommandInteraction) {
+  await executeWithErrorHandling(interaction, executeCommand, {
+    commandName: 'liststudents',
+  });
 }

@@ -113,3 +113,102 @@ export function validateUrl(value: unknown, fieldName: string = 'url'): string {
   }
 }
 
+/**
+ * Validate and sanitize currency code (ISO 4217 format)
+ */
+export function validateCurrency(value: unknown, fieldName: string = 'currency'): string {
+  const currency = validateNonEmptyString(value, fieldName);
+  
+  // Basic validation: 3 uppercase letters
+  if (!/^[A-Z]{3}$/.test(currency)) {
+    throw new ValidationError(`${fieldName} must be a valid 3-letter currency code (e.g., USD, EUR)`);
+  }
+  
+  return currency;
+}
+
+/**
+ * Validate numeric value (for prices, amounts, etc.)
+ */
+export function validateNumeric(
+  value: unknown,
+  fieldName: string,
+  min?: number,
+  max?: number,
+  allowNull: boolean = true
+): number | null {
+  if (value === null || value === undefined) {
+    if (allowNull) return null;
+    throw new ValidationError(`${fieldName} is required`);
+  }
+  
+  const num = typeof value === 'number' ? value : parseFloat(String(value));
+  
+  if (isNaN(num)) {
+    throw new ValidationError(`${fieldName} must be a valid number`);
+  }
+  
+  if (min !== undefined && num < min) {
+    throw new ValidationError(`${fieldName} must be at least ${min}`);
+  }
+  
+  if (max !== undefined && num > max) {
+    throw new ValidationError(`${fieldName} must be at most ${max}`);
+  }
+  
+  return num;
+}
+
+/**
+ * Validate transaction ID (alphanumeric string, max 255 chars)
+ */
+export function validateTransactionId(value: unknown, fieldName: string = 'transaction_id'): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  
+  const id = String(value).trim();
+  
+  if (id.length === 0) {
+    return null;
+  }
+  
+  if (id.length > 255) {
+    throw new ValidationError(`${fieldName} must be at most 255 characters`);
+  }
+  
+  // Allow alphanumeric, hyphens, and underscores
+  if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+    throw new ValidationError(`${fieldName} contains invalid characters`);
+  }
+  
+  return id;
+}
+
+/**
+ * Validate and sanitize name (person name)
+ */
+export function validateName(value: unknown, fieldName: string = 'name', maxLength: number = 255): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  
+  const name = String(value).trim();
+  
+  if (name.length === 0) {
+    return null;
+  }
+  
+  if (name.length > maxLength) {
+    throw new ValidationError(`${fieldName} must be at most ${maxLength} characters`);
+  }
+  
+  // Allow letters, spaces, hyphens, apostrophes, and common unicode characters
+  // This is more permissive than strict validation but prevents injection
+  if (!/^[\p{L}\s'-]+$/u.test(name)) {
+    throw new ValidationError(`${fieldName} contains invalid characters`);
+  }
+  
+  return name;
+}
+
