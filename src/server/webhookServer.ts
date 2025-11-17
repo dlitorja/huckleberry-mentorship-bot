@@ -1090,6 +1090,17 @@ const server = app.listen(PORT, () => {
   });
 });
 
+// Handle server startup errors (e.g., port already in use)
+server.on('error', (error: NodeJS.ErrnoException) => {
+  if (error.code === 'EADDRINUSE') {
+    logger.error(`Port ${PORT} is already in use. Please choose a different port.`, error);
+    process.exit(1);
+  } else {
+    logger.error('Server error', error);
+    process.exit(1);
+  }
+});
+
 export default app;
 
 // -------------------------------

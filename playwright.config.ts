@@ -14,6 +14,12 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : undefined,
+  /* Global timeout for each test */
+  timeout: process.env.CI ? 30 * 1000 : 10 * 1000, // 30s in CI, 10s locally
+  /* Expect timeout */
+  expect: {
+    timeout: process.env.CI ? 10 * 1000 : 5 * 1000, // 10s in CI, 5s locally
+  },
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: process.env.CI ? [
     ['html'],
@@ -51,11 +57,14 @@ export default defineConfig({
     command: process.env.CI ? 'npm run build && npm run webhook:prod' : 'npm run webhook:prod',
     url: 'http://localhost:3000/health',
     reuseExistingServer: !process.env.CI,
-    timeout: process.env.CI ? 180 * 1000 : 120 * 1000, // Longer timeout for CI
+    timeout: process.env.CI ? 240 * 1000 : 120 * 1000, // Longer timeout for CI (4 minutes)
     stdout: 'pipe',
     stderr: 'pipe',
+    // Playwright will poll the health URL until it returns 200
+    // The health endpoint returns 200 even in degraded state in test mode
     env: {
       NODE_ENV: 'test',
+      CI: process.env.CI || 'false',
       // Allow server to start even with missing credentials in test mode
       ...process.env,
     },

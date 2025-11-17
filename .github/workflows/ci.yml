@@ -132,6 +132,7 @@ jobs:
   e2e-tests:
     name: E2E Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       
@@ -147,9 +148,20 @@ jobs:
       
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
+        continue-on-error: false
       
       - name: Build project
         run: npm run build
+        continue-on-error: false
+      
+      - name: Check if port 3000 is available
+        run: |
+          if lsof -Pi :3000 -sTCP:LISTEN -t >/dev/null ; then
+            echo "Port 3000 is in use, attempting to free it..."
+            lsof -ti:3000 | xargs kill -9 || true
+            sleep 2
+          fi
+        continue-on-error: true
       
       - name: Run E2E tests
         run: npm run test:e2e
@@ -183,3 +195,19 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 30
+      
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: playwright-report/
+          retention-days: 7
+      
+      - name: Show server logs on failure
+        if: failure()
+        run: |
+          echo "=== Checking for running processes on port 3000 ==="
+          lsof -i :3000 || echo "No process found on port 3000"
+          echo "=== Checking for Node processes ==="
+          ps aux | grep node || echo "No node processes found"
