@@ -13,37 +13,21 @@ const nextConfig: NextConfig = {
     ]
   },
   // Set outputFileTracingRoot to silence the warning about multiple lockfiles
-  outputFileTracingRoot: path.join(__dirname),
+  outputFileTracingRoot: path.join(process.cwd()),
   // Ensure webpack resolves path aliases correctly
-  // Next.js should automatically use tsconfig.json paths, but we ensure webpack also knows about them
-  webpack: (config, { dir, isServer }) => {
-    // Use the dir parameter which Next.js provides - it's the project root
-    // Fallback to __dirname if dir is not available
-    const webPortalRoot = dir || __dirname;
+  // Next.js should automatically read from tsconfig.json, but we ensure webpack knows about @ alias
+  webpack: (config, { dir }) => {
+    // dir is the project root (huckleberry-web-portal directory)
+    // Use path.resolve to ensure we have an absolute path
+    const projectRoot = path.resolve(dir);
     
-    // Ensure resolve exists
-    if (!config.resolve) {
-      config.resolve = {};
-    }
+    // Initialize resolve
+    config.resolve = config.resolve || {};
+    config.resolve.alias = config.resolve.alias || {};
     
-    // Preserve existing aliases
-    const existingAliases = config.resolve.alias || {};
-    
-    // Set up path aliases - use absolute paths
-    config.resolve.alias = {
-      ...existingAliases,
-      '@': path.resolve(webPortalRoot),
-    };
-    
-    // Ensure extensions include TypeScript
-    if (!config.resolve.extensions) {
-      config.resolve.extensions = [];
-    }
-    const extensions = ['.tsx', '.ts', '.jsx', '.js', '.json'];
-    config.resolve.extensions = [
-      ...extensions.filter(ext => !config.resolve.extensions.includes(ext)),
-      ...config.resolve.extensions,
-    ];
+    // Add @ alias pointing to project root (absolute path)
+    // This ensures @/lib/utils resolves to <projectRoot>/lib/utils.ts
+    config.resolve.alias['@'] = projectRoot;
     
     return config;
   },
