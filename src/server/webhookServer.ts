@@ -17,6 +17,7 @@ import { logger } from '../utils/logger.js';
 import { validateEmail, validateName, validateNumeric, validateCurrency, validateTransactionId } from '../utils/validation.js';
 import { measurePerformance } from '../utils/performance.js';
 import { checkRateLimit as checkDatabaseRateLimit, cleanupExpiredRateLimits } from '../utils/rateLimiter.js';
+import { requestIdMiddleware, getRequestIdFromRequest } from '../utils/requestId.js';
 import crypto from 'crypto';
 
 const app = express();
@@ -28,6 +29,8 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Middleware
 app.use(cors());
+// Request ID tracking - must be early in the middleware chain
+app.use(requestIdMiddleware);
 // Preserve raw body for webhook signature verification
 app.use(express.json({ verify: (req: any, res, buf) => { req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: true, verify: (req: any, res, buf) => { req.rawBody = buf; } }));
@@ -95,9 +98,17 @@ app.use(oauthCallback);
 
 // Health check endpoint with comprehensive service verification
 app.get('/health', async (req, res) => {
+  const requestId = getRequestIdFromRequest(req);
+  logger.debug('Health check request', { 
+    path: req.path, 
+    method: req.method,
+    requestId 
+  });
+
   const healthStatus: {
     status: 'healthy' | 'degraded' | 'unhealthy';
     timestamp: string;
+    requestId?: string;
     services: {
       server: { status: 'ok' | 'error'; message?: string };
       database: { status: 'ok' | 'error'; message?: string; latency?: number };
@@ -107,6 +118,7 @@ app.get('/health', async (req, res) => {
   } = {
     status: 'healthy',
     timestamp: new Date().toISOString(),
+    requestId,
     services: {
       server: { status: 'ok' },
       database: { status: 'error', message: 'Not checked' },
@@ -510,7 +522,11 @@ async function handleNewStudentPurchase(params: {
       details: e,
       studentEmail: email,
     });
-    console.error('[webhook] Exception during mentee upsert:', e);
+    logger.error(
+      'Exception during mentee upsert in purchase webhook',
+      e instanceof Error ? e : new Error(String(e)),
+      { studentEmail: email }
+    );
   }
 
       // 2) Ensure mentorship exists and is additive for renewals (atomic operation)
@@ -600,10 +616,15 @@ async function handleNewStudentPurchase(params: {
 
 // Kajabi webhook endpoint (with signature verification and rate limiting)
 app.post('/webhook/kajabi', webhookRateLimitMiddleware, verifyWebhook, async (req, res) => {
+  const requestId = getRequestIdFromRequest(req);
+  
   try {
     logger.info('Received Kajabi webhook', { 
       hasBody: !!req.body,
       bodyKeys: req.body ? Object.keys(req.body) : [],
+      path: req.path,
+      method: req.method,
+      requestId,
     });
 
     // Extract data from Kajabi's nested structure
@@ -858,9 +879,13 @@ app.post('/webhook/kajabi', webhookRateLimitMiddleware, verifyWebhook, async (re
     }
 
   } catch (error) {
+    const requestId = getRequestIdFromRequest(req);
     logger.error('Unexpected error processing Kajabi webhook', error instanceof Error ? error : new Error(String(error)), {
       email: req.body.member?.email || req.body.payload?.member_email || req.body.email,
       offerId: req.body.offer?.id || req.body.payload?.offer_id || req.body.offer_id,
+      path: req.path,
+      method: req.method,
+      requestId,
     });
     
     // Notify admin of unexpected error
@@ -876,10 +901,15 @@ app.post('/webhook/kajabi', webhookRateLimitMiddleware, verifyWebhook, async (re
 
 // Kajabi cancellation/refund webhook endpoint (with signature verification and rate limiting)
 app.post('/webhook/kajabi/cancellation', webhookRateLimitMiddleware, verifyWebhook, async (req, res) => {
+  const requestId = getRequestIdFromRequest(req);
+  
   try {
     logger.info('Received Kajabi cancellation webhook', { 
       hasBody: !!req.body,
       bodyKeys: req.body ? Object.keys(req.body) : [],
+      path: req.path,
+      method: req.method,
+      requestId,
     });
 
     // Extract email from various possible Kajabi webhook formats
@@ -1046,6 +1076,14 @@ setInterval(cleanupRateLimits, 30 * 60 * 1000);
 
 app.get('/:shortCode', async (req, res) => {
   const { shortCode } = req.params;
+  const requestId = getRequestIdFromRequest(req);
+
+  logger.debug('URL redirect request', {
+    shortCode,
+    path: req.path,
+    method: req.method,
+    requestId,
+  });
 
   try {
     const clientIp =
@@ -1248,7 +1286,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 // Centralized error handling middleware
 // -----------------------------------------
 app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  const requestId = (req.headers['x-request-id'] as string) || undefined;
+  const requestId = getRequestIdFromRequest(req);
   const formattedError =
     err instanceof Error
       ? { message: err.message, stack: err.stack }

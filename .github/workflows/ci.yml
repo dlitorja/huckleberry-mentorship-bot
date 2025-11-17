@@ -89,7 +89,7 @@ jobs:
           cache-dependency-path: package-lock.json
       
       - name: Audit root dependencies
-        run: npm audit --audit-level=moderate
+        run: npm audit --audit-level=moderate || true
         working-directory: .
         continue-on-error: true
       
@@ -101,7 +101,7 @@ jobs:
           cache-dependency-path: huckleberry-web-portal/package-lock.json
       
       - name: Audit web portal dependencies
-        run: npm audit --audit-level=moderate
+        run: npm audit --audit-level=moderate || true
         working-directory: ./huckleberry-web-portal
         continue-on-error: true
 

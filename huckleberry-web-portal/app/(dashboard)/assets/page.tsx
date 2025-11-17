@@ -30,7 +30,7 @@ export default function AssetsPage() {
       router.push("/login?callbackUrl=/assets");
       return;
     }
-    const role = (session as any).role;
+    const role = session?.role;
     if (role !== "admin") {
       router.push("/dashboard");
       return;
@@ -130,7 +130,7 @@ export default function AssetsPage() {
     }
   }
 
-  async function deleteAsset(id: string, url: string) {
+  async function deleteAsset(id: string, _url: string) {
     if (!confirm("Are you sure you want to delete this image?")) return;
 
     try {

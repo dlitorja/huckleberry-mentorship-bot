@@ -14,6 +14,17 @@ A comprehensive Discord bot and webhook system for managing 1-on-1 mentorship pr
 - **URL Shortener & Analytics**: Create branded short links with detailed click tracking and analytics.
 - **Alumni & Testimonials**: Alumni analytics view and automated testimonial requests (quick-win path live)
 
+### 🌐 Web Portal (Phase 2)
+- **Student & Instructor Dashboard**: View sessions, upload images, and manage mentorship progress
+- **Image Upload & Gallery**: Drag-and-drop image uploads with compression, thumbnails, and lightbox viewing
+- **Rich Text Session Notes**: Tiptap-powered rich text editor for detailed session documentation
+- **Image Comments & Feedback**: Instructors can provide feedback directly on uploaded images
+- **Image Assets Hosting**: Admin-only page for hosting high-quality images for Kajabi landing pages with easy URL copying
+- **Role-Based Access**: Students see only their data, instructors see their mentees, admins have full access
+- **Discord OAuth Integration**: Seamless authentication using existing Discord accounts
+
+See **[PHASE_2_IMPLEMENTATION_STATUS.md](PHASE_2_IMPLEMENTATION_STATUS.md)** for complete web portal feature list and status.
+
 ### 💬 Discord Commands
 - **Instructor Commands**: `/session`, `/addsessions`, `/liststudents`, `/sessionsummary`, `/addnote`, `/viewnotes`, `/addlink`, `/shortenurl`, `/urlstats`, `/urllist`, `/urldelete`
 - **Admin Commands**: `/adminsummary`, `/linkstudent`, `/removestudent`
@@ -127,6 +138,8 @@ The bot uses multiple Supabase tables. Apply the SQL in `database/` first, then 
 9. **`supabase/migrations/20251116135000_offer_sessions_and_purchases.sql`** - Adds `kajabi_offers.sessions_per_purchase` and a `purchases` audit table
 10. **`supabase/migrations/20251116140000_group_roles.sql`** - Adds `kajabi_offers.mentorship_type`, `kajabi_offers.discord_role_name`, and `mentorships.mentee_role_name`
 11. **`supabase/migrations/20251116120000_alumni_and_testimonial.sql`** - Alumni tracking helpers and `alumni_export` view
+12. **`supabase/migrations/20251118000000_create_rate_limit_tokens.sql`** - Creates `rate_limit_tokens` table for distributed rate limiting
+13. **`supabase/migrations/20251118000001_create_landing_page_assets_bucket.sql`** - Creates `landing-page-assets` public storage bucket for Kajabi landing page images
 
 **Key Tables:**
 - `instructors` - Instructor profiles with Discord IDs

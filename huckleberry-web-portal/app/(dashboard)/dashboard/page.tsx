@@ -50,11 +50,11 @@ export default async function DashboardPage() {
       headers: {
         cookie: cookieStore.toString(),
       },
-    } as any,
+    } as { headers: { cookie: string } },
     secret: process.env.NEXTAUTH_SECRET 
   });
   
-  const role = String((token as any)?.role || "unknown");
+  const role = String(token?.role || "unknown");
   const isInstructorOrAdmin = role === "instructor" || role === "admin";
   const isStudent = role === "student";
   

@@ -14,14 +14,22 @@ type ImageItem = {
   created_at?: string;
 };
 
+type SessionData = {
+  id: string;
+  mentorship_id: string;
+  notes: string | null;
+  created_at: string;
+  session_date: string | null;
+};
+
 export default function SessionDetailPage(props: Props) {
   const { data: authSession } = useSession();
   const [sessionId, setSessionId] = useState<string>("");
-  const [session, setSession] = useState<any>(null);
+  const [session, setSession] = useState<SessionData | null>(null);
   const [images, setImages] = useState<ImageItem[]>([]);
   const [loading, setLoading] = useState(true);
   
-  const userRole = (authSession as any)?.role || "unknown";
+  const userRole = authSession?.role || "unknown";
   const isAdmin = userRole === "admin";
 
   useEffect(() => {

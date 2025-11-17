@@ -6,6 +6,7 @@ import { Routes } from 'discord.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { logger } from '../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,13 +15,17 @@ const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN!
 
 async function registerCommands() {
   try {
-    console.log('Started refreshing application (/) commands.');
+    logger.info('Started refreshing application (/) commands.');
 
     const guildId = process.env.DISCORD_GUILD_ID;
     const clientId = process.env.DISCORD_CLIENT_ID;
 
     if (!guildId || !clientId) {
-      console.error('DISCORD_GUILD_ID or DISCORD_CLIENT_ID is not set.');
+      logger.error(
+        'DISCORD_GUILD_ID or DISCORD_CLIENT_ID is not set',
+        new Error('Missing required environment variables'),
+        { guildId: !!guildId, clientId: !!clientId }
+      );
       return;
     }
 
@@ -40,16 +45,24 @@ async function registerCommands() {
       }
     }
 
-    console.log(`Registering ${commands.length} commands:`, commands.map(c => c.name).join(', '));
+    logger.info('Registering commands', {
+      commandCount: commands.length,
+      commandNames: commands.map(c => c.name),
+    });
 
     await rest.put(
       Routes.applicationGuildCommands(clientId, guildId),
       { body: commands }
     );
 
-    console.log('Successfully reloaded application (/) commands.');
+    logger.info('Successfully reloaded application (/) commands', {
+      commandCount: commands.length,
+    });
   } catch (error) {
-    console.error('Error registering commands:', error);
+    logger.error(
+      'Error registering commands',
+      error instanceof Error ? error : new Error(String(error))
+    );
   }
 }
 

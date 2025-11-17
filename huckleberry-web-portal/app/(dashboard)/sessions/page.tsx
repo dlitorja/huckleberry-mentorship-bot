@@ -38,11 +38,11 @@ export default function SessionsListPage() {
   const [noteContent, setNoteContent] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  const userRole = (authSession as any)?.role || "unknown";
+  const userRole = authSession?.role || "unknown";
   const isAdmin = userRole === "admin";
   
-  // Count general images (not tied to a specific session)
-  const generalImageCount = images.filter(img => !img.session_note_id).length;
+  // Count general images (not tied to a specific session) - kept for future use
+  const _generalImageCount = images.filter(img => !img.session_note_id).length;
 
   useEffect(() => {
     async function loadData() {

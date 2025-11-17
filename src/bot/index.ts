@@ -10,6 +10,7 @@ import { CONFIG, getSupportContactString } from '../config/constants.js';
 import { logger } from '../utils/logger.js';
 import { applyCommandRateLimit } from '../utils/commandRateLimit.js';
 import { handleCommandError } from '../utils/commandErrorHandler.js';
+import { generateRequestId, withRequestIdAsync } from '../utils/requestId.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -75,32 +76,60 @@ client.on('shardError', (err) => {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  const command = commands.get(interaction.commandName);
-  if (!command) {
-    logger.warn('Command not found', { commandName: interaction.commandName, userId: interaction.user.id });
-    return;
-  }
+  // Generate request ID for this command execution
+  const requestId = generateRequestId();
+  
+  // Execute command within request ID context for trace logging
+  await withRequestIdAsync(requestId, async () => {
+    const command = commands.get(interaction.commandName);
+    if (!command) {
+      logger.warn('Command not found', { 
+        commandName: interaction.commandName, 
+        userId: interaction.user.id,
+        requestId,
+      });
+      return;
+    }
 
-  // Apply rate limiting before executing command
-  const rateLimitAllowed = await applyCommandRateLimit(interaction as ChatInputCommandInteraction);
-  if (!rateLimitAllowed) {
-    return; // Rate limit message already sent
-  }
+    logger.debug('Command execution started', {
+      commandName: interaction.commandName,
+      userId: interaction.user.id,
+      guildId: interaction.guildId,
+      requestId,
+    });
 
-  try {
-    await command.execute(interaction as ChatInputCommandInteraction);
-  } catch (err) {
-    // Use standardized error handler
-    await handleCommandError(
-      err,
-      interaction as ChatInputCommandInteraction,
-      {
+    // Apply rate limiting before executing command
+    const rateLimitAllowed = await applyCommandRateLimit(interaction as ChatInputCommandInteraction);
+    if (!rateLimitAllowed) {
+      logger.debug('Command rate limited', {
         commandName: interaction.commandName,
         userId: interaction.user.id,
-        guildId: interaction.guildId || undefined,
-      }
-    );
-  }
+        requestId,
+      });
+      return; // Rate limit message already sent
+    }
+
+    try {
+      await command.execute(interaction as ChatInputCommandInteraction);
+      logger.debug('Command execution completed', {
+        commandName: interaction.commandName,
+        userId: interaction.user.id,
+        requestId,
+      });
+    } catch (err) {
+      // Use standardized error handler
+      await handleCommandError(
+        err,
+        interaction as ChatInputCommandInteraction,
+        {
+          commandName: interaction.commandName,
+          userId: interaction.user.id,
+          guildId: interaction.guildId || undefined,
+          requestId,
+        }
+      );
+    }
+  });
 });
 
 // --------------------

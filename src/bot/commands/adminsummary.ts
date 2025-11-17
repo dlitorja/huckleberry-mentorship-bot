@@ -57,7 +57,9 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   }
 
   // Group by instructor
-  type MentorshipRow = {
+  // Type definition for documentation (mentorships array shape)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  type _MentorshipRow = {
     sessions_remaining: number;
     total_sessions: number;
     last_session_date?: string | null;

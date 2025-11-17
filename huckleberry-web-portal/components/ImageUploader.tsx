@@ -363,7 +363,6 @@ export function ImageUploader({
                     <div className="text-xs text-red-600 dark:text-red-400 text-center px-1">Error</div>
                   </div>
                 ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
                   <img 
                     src={pf.preview} 
                     alt={`Preview ${i + 1}`} 

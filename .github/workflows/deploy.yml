@@ -11,19 +11,13 @@ on:
         options:
           - production
           - staging
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - '**.md'
-      - '.github/**'
-      - 'docs/**'
 
 jobs:
   deploy:
     name: Deploy to Fly.io
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    # Only deploy if FLY_API_TOKEN is set (skip if not configured)
+    if: ${{ secrets.FLY_API_TOKEN != '' }}
     
     steps:
       - name: Checkout code

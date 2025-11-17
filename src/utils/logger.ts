@@ -1,6 +1,8 @@
 // src/utils/logger.ts
 // Structured logging utility for consistent log formatting and observability
 
+import { getRequestId } from './requestId.js';
+
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 interface LogContext {
@@ -66,8 +68,16 @@ function createLogEntry(
     message,
   };
   
-  if (context && Object.keys(context).length > 0) {
-    entry.context = context;
+  // Automatically include request ID if available in context
+  const requestId = getRequestId();
+  const enrichedContext: LogContext = { ...context };
+  
+  if (requestId) {
+    enrichedContext.requestId = requestId;
+  }
+  
+  if (enrichedContext && Object.keys(enrichedContext).length > 0) {
+    entry.context = enrichedContext;
   }
   
   if (error) {

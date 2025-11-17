@@ -7,7 +7,7 @@
     "dev": "npx next dev",
     "build": "npx next build",
     "start": "npx next start",
-    "lint": "eslint .",
+    "lint": "next lint",
     "security:audit": "npm audit",
     "security:audit:fix": "npm audit fix",
     "security:audit:force": "npm audit --audit-level=moderate",

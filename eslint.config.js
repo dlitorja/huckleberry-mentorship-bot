@@ -14,6 +14,7 @@ export default [
       'node_modules/**',
       'backup.sql',
       'supabase/**',
+      'huckleberry-web-portal/**', // Web portal has its own ESLint config
     ],
   },
   {

@@ -416,7 +416,6 @@ export function ImageGallery({ images, onDelete, showDelete = true, mentorshipId
                 </div>
               )}
 
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img 
                 src={img.thumbnail_url || img.image_url} 
                 alt={img.caption || "image"} 
@@ -503,7 +502,6 @@ export function ImageGallery({ images, onDelete, showDelete = true, mentorshipId
             }`}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={currentImage.image_url}
               alt={currentImage.caption || "image"}
