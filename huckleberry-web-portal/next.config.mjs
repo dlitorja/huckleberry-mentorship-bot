@@ -1,5 +1,6 @@
 import path from "path";
 import { fileURLToPath } from "url";
+import fs from "fs";
 import TsconfigPathsPlugin from "tsconfig-paths-webpack-plugin";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -53,13 +54,32 @@ const nextConfig = {
     }
     
     // Ensure @ alias points to project root
-    // This is a direct fallback if the plugin doesn't work
-    // Use a function to handle the alias resolution more explicitly
+    // Use a more explicit alias pattern that webpack can understand
     const existingAlias = config.resolve.alias;
+    
+    // Convert alias to an object if it's an array (webpack 5 supports both)
+    if (Array.isArray(existingAlias)) {
+      config.resolve.alias = {};
+    }
+    
+    // Set up explicit aliases for common patterns
+    // Note: '@' should resolve '@/lib/utils' to 'projectRoot/lib/utils'
     config.resolve.alias = {
-      ...existingAlias,
+      ...(typeof existingAlias === 'object' ? existingAlias : {}),
       '@': projectRoot,
     };
+    
+    // Verify the files exist (for debugging)
+    const utilsPath = path.join(projectRoot, 'lib', 'utils.ts');
+    const imageCompressionPath = path.join(projectRoot, 'lib', 'imageCompression.ts');
+    try {
+      console.log('[Next.js Config] lib/utils.ts exists:', fs.existsSync(utilsPath));
+      console.log('[Next.js Config] lib/imageCompression.ts exists:', fs.existsSync(imageCompressionPath));
+      console.log('[Next.js Config] Expected path for @/lib/utils:', utilsPath);
+    } catch (e) {
+      // fs might not be available in all contexts
+      console.log('[Next.js Config] Could not check file existence:', e.message);
+    }
     
     // Also ensure projectRoot is in modules for resolution
     if (!config.resolve.modules) {
