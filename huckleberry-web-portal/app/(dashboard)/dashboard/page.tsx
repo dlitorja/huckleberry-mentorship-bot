@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
+import { cookies } from "next/headers";
 
 type MentorshipData = {
   id: string;
