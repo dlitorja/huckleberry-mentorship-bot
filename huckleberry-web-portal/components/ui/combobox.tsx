@@ -4,10 +4,10 @@ import type * as React from "react";
 import { cn } from "@/lib/utils";
 import { CheckIcon, ChevronDownIcon, Cross2Icon } from "@radix-ui/react-icons";
 
-const Combobox = (({
+function Combobox({
   className,
   ...props
-}: React.ComponentProps<typeof ComboboxPrimitive.Root>) => {
+}: React.ComponentProps<typeof ComboboxPrimitive.Root>) {
   return (
     <ComboboxPrimitive.Root
       data-slot="combobox"
@@ -15,7 +15,7 @@ const Combobox = (({
       {...props}
     />
   );
-}) as ComboboxPrimitive.ComboboxRootComponentProps;
+}
 
 function ComboboxLabel({
   className,
