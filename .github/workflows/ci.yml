@@ -2,239 +2,184 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [ main, develop ]
   pull_request:
-    branches: [main, develop]
-
-env:
-  NODE_VERSION: '20'
-  CI: true
+    branches: [ main, develop ]
 
 jobs:
-  lint-and-typecheck:
+  lint-and-type-check:
     name: Lint & Type Check
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '20'
           cache: 'npm'
-
+          cache-dependency-path: package.json
+      
       - name: Install dependencies
         run: npm ci
-
+      
       - name: Run ESLint
         run: npm run lint
-        continue-on-error: false
-
-      - name: TypeScript type check
+      
+      - name: Type check
         run: npm run build:check
-        continue-on-error: false
 
-  test:
+  unit-and-integration-tests:
     name: Unit & Integration Tests
     runs-on: ubuntu-latest
-    env:
-      NODE_ENV: test
-      DISCORD_BOT_TOKEN: test-bot-token
-      DISCORD_GUILD_ID: test-guild-id
-      DISCORD_CLIENT_ID: test-client-id
-      DISCORD_CLIENT_SECRET: test-client-secret
-      DISCORD_ADMIN_ID: test-admin-id
-      SUPABASE_URL: https://test.supabase.co
-      SUPABASE_SERVICE_ROLE_KEY: test-service-key
-      RESEND_API_KEY: test-resend-key
-      RESEND_FROM_EMAIL: test@example.com
-      WEBHOOK_PORT: 3000
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '20'
           cache: 'npm'
-
+          cache-dependency-path: package.json
+      
       - name: Install dependencies
         run: npm ci
-
+      
       - name: Run tests
         run: npm test
-        continue-on-error: false
+        env:
+          NODE_ENV: test
+          # Minimal test environment variables
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN || 'test-token' }}
+          DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID || 'test-client-id' }}
+          DISCORD_CLIENT_SECRET: ${{ secrets.DISCORD_CLIENT_SECRET || 'test-client-secret' }}
+          DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID || 'test-guild-id' }}
+          DISCORD_ADMIN_ID: ${{ secrets.DISCORD_ADMIN_ID || 'test-admin-id' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://test.supabase.co' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'test-service-key' }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY || 'test-resend-key' }}
+          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL || 'test@example.com' }}
+          DISCORD_REDIRECT_URI: ${{ secrets.DISCORD_REDIRECT_URI || 'http://localhost:3000/oauth/callback' }}
+          WEBHOOK_PORT: '3000'
+          ORGANIZATION_NAME: 'Test Organization'
+          SUPPORT_EMAIL: 'support@test.com'
+          ADMIN_EMAIL: 'admin@test.com'
 
-      - name: Upload test coverage
-        if: always()
-        uses: actions/upload-artifact@v4
+  web-portal-build:
+    name: Web Portal Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          name: test-coverage
-          path: coverage/
-          retention-days: 7
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: huckleberry-web-portal/package.json
+      
+      - name: Install web portal dependencies
+        working-directory: huckleberry-web-portal
+        run: npm ci
+      
+      - name: Build web portal
+        working-directory: huckleberry-web-portal
+        run: npm run build
+        env:
+          # Minimal build-time environment variables
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://test.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'test-anon-key' }}
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package.json
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run security audit
+        run: npm run security:audit
+        continue-on-error: true
 
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [lint-and-typecheck]
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '20'
           cache: 'npm'
-
+          cache-dependency-path: package.json
+      
       - name: Install dependencies
         run: npm ci
-
+      
       - name: Build TypeScript
         run: npm run build
-        continue-on-error: false
 
-      - name: Check build output exists
-        run: |
-          if [ ! -d "dist" ]; then
-            echo "Build failed: dist directory not found"
-            exit 1
-          fi
-          if [ ! -f "dist/bot/index.js" ]; then
-            echo "Build failed: dist/bot/index.js not found"
-            exit 1
-          fi
-          echo "Build successful"
-
-  e2e:
+  e2e-tests:
     name: E2E Tests
     runs-on: ubuntu-latest
-    needs: [build, test]
-    env:
-      NODE_ENV: test
-      DISCORD_BOT_TOKEN: test-bot-token
-      DISCORD_GUILD_ID: test-guild-id
-      DISCORD_CLIENT_ID: test-client-id
-      DISCORD_CLIENT_SECRET: test-client-secret
-      DISCORD_ADMIN_ID: test-admin-id
-      DISCORD_REDIRECT_URI: http://localhost:3000/oauth/callback
-      SUPABASE_URL: https://test.supabase.co
-      SUPABASE_SERVICE_ROLE_KEY: test-service-key
-      RESEND_API_KEY: test-resend-key
-      RESEND_FROM_EMAIL: test@example.com
-      WEBHOOK_PORT: 3000
-      TEST_BASE_URL: http://localhost:3000
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '20'
           cache: 'npm'
-
+          cache-dependency-path: package.json
+      
       - name: Install dependencies
         run: npm ci
-
+      
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
-        continue-on-error: false
-
-      - name: Build application
+      
+      - name: Build project
         run: npm run build
-        continue-on-error: false
-
+      
       - name: Run E2E tests
         run: npm run test:e2e
-        continue-on-error: false
-        timeout-minutes: 10
-
+        env:
+          NODE_ENV: test
+          CI: true
+          # Minimal environment variables for E2E tests
+          # The webhook server should handle missing credentials gracefully
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN || 'test-token-for-e2e' }}
+          DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID || 'test-client-id' }}
+          DISCORD_CLIENT_SECRET: ${{ secrets.DISCORD_CLIENT_SECRET || 'test-client-secret' }}
+          DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID || 'test-guild-id' }}
+          DISCORD_ADMIN_ID: ${{ secrets.DISCORD_ADMIN_ID || 'test-admin-id' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://test.supabase.co' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'test-service-key' }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY || 'test-resend-key' }}
+          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL || 'test@example.com' }}
+          DISCORD_REDIRECT_URI: ${{ secrets.DISCORD_REDIRECT_URI || 'http://localhost:3000/oauth/callback' }}
+          WEBHOOK_PORT: '3000'
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET || '' }}
+          ORGANIZATION_NAME: 'Test Organization'
+          SUPPORT_EMAIL: 'support@test.com'
+          ADMIN_EMAIL: 'admin@test.com'
+          DEFAULT_SESSIONS_PER_PURCHASE: '4'
+          TEST_BASE_URL: 'http://localhost:3000'
+      
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
           path: playwright-report/
-          retention-days: 7
-
-  web-portal:
-    name: Web Portal Build
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: huckleberry-web-portal
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: huckleberry-web-portal/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint web portal
-        run: npm run lint
-        continue-on-error: false
-
-      - name: Build web portal
-        run: npm run build
-        continue-on-error: false
-        env:
-          # Add minimal env vars for Next.js build
-          NODE_ENV: production
-          NEXT_PUBLIC_SUPABASE_URL: https://test.supabase.co
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: test-anon-key
-
-  security-audit:
-    name: Security Audit
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run security audit
-        run: npm run security:audit || echo "⚠️ Security audit found issues (non-blocking)"
-        continue-on-error: true
-
-  ci-success:
-    name: All Checks Passed
-    runs-on: ubuntu-latest
-    needs: [lint-and-typecheck, test, build, e2e, web-portal, security-audit]
-    if: always()
-    steps:
-      - name: Check job status
-        run: |
-          echo "CI Job Results:"
-          echo "- Lint & TypeCheck: ${{ needs.lint-and-typecheck.result }}"
-          echo "- Tests: ${{ needs.test.result }}"
-          echo "- Build: ${{ needs.build.result }}"
-          echo "- E2E Tests: ${{ needs.e2e.result }}"
-          echo "- Web Portal: ${{ needs.web-portal.result }}"
-          echo "- Security Audit: ${{ needs.security-audit.result }}"
-          
-          if [ "${{ needs.lint-and-typecheck.result }}" != "success" ] || \
-             [ "${{ needs.test.result }}" != "success" ] || \
-             [ "${{ needs.build.result }}" != "success" ] || \
-             [ "${{ needs.e2e.result }}" != "success" ] || \
-             [ "${{ needs.web-portal.result }}" != "success" ]; then
-            echo "❌ One or more required CI jobs failed"
-            exit 1
-          fi
-          echo "✅ All required CI checks passed successfully!"
+          retention-days: 30

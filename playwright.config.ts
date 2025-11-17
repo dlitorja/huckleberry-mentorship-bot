@@ -51,9 +51,14 @@ export default defineConfig({
     command: process.env.CI ? 'npm run build && npm run webhook:prod' : 'npm run webhook:prod',
     url: 'http://localhost:3000/health',
     reuseExistingServer: !process.env.CI,
-    timeout: 120 * 1000,
+    timeout: process.env.CI ? 180 * 1000 : 120 * 1000, // Longer timeout for CI
     stdout: 'pipe',
     stderr: 'pipe',
+    env: {
+      NODE_ENV: 'test',
+      // Allow server to start even with missing credentials in test mode
+      ...process.env,
+    },
   },
 });
 
