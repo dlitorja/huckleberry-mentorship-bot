@@ -5,6 +5,10 @@ import { ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
 import { sendTestimonialRequest } from '../../utils/testimonialRequest.js';
 import { getMentorshipByDiscordIds } from '../../utils/mentorship.js';
+import { executeWithErrorHandling, handleAsyncError } from '../../utils/commandErrorHandler.js';
+import { measurePerformance } from '../../utils/performance.js';
+import { validateDate } from '../../utils/validation.js';
+import { logger } from '../../utils/logger.js';
 
 export const data = new SlashCommandBuilder()
   .setName('session')
@@ -22,7 +26,7 @@ export const data = new SlashCommandBuilder()
       .setRequired(false)
   );
 
-export async function execute(interaction: ChatInputCommandInteraction) {
+async function executeCommand(interaction: ChatInputCommandInteraction) {
   const student = interaction.options.getUser('student', true);
   const instructorDiscordId = interaction.user.id;
   const dateInput = interaction.options.getString('date');
@@ -32,25 +36,16 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   // Parse and validate date
   let sessionDate: Date;
   if (dateInput) {
-    // Try to parse the date
-    sessionDate = new Date(dateInput);
-    
-    // Check if date is valid
-    if (isNaN(sessionDate.getTime())) {
+    try {
+      sessionDate = validateDate(dateInput, 'date', false); // false = don't allow future dates
+    } catch (validationError) {
       await interaction.editReply(
-        `❌ Invalid date format. Please use:\n` +
+        `❌ ${validationError instanceof Error ? validationError.message : 'Invalid date format'}\n\n` +
+        `Please use:\n` +
         `• YYYY-MM-DD (e.g., 2025-11-09)\n` +
         `• MM/DD/YYYY (e.g., 11/09/2025)\n` +
         `• Or leave blank for today`
       );
-      return;
-    }
-    
-    // Check if date is in the future
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
-    if (sessionDate > today) {
-      await interaction.editReply(`❌ Session date cannot be in the future.`);
       return;
     }
   } else {
@@ -58,37 +53,50 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     sessionDate = new Date();
   }
 
-  // Optimized mentorship lookup (single query with joins)
-  const { data, error } = await getMentorshipByDiscordIds({
-    instructorDiscordId,
-    menteeDiscordId: student.id,
-    status: 'active'
-  });
+  // Optimized mentorship lookup with performance monitoring
+  const mentorshipData = await measurePerformance(
+    'session.mentorship_lookup',
+    async () => {
+      const { data, error } = await getMentorshipByDiscordIds({
+        instructorDiscordId,
+        menteeDiscordId: student.id,
+        status: 'active'
+      });
 
-  if (error) {
-    console.error('Mentorship lookup error:', error);
-  }
+      if (error) {
+        throw new Error(`Mentorship lookup failed: ${error.message}`);
+      }
 
-  if (!data) {
-    await interaction.editReply(`Could not find a mentorship record for ${student.tag}.`);
-    return;
-  }
+      if (!data) {
+        throw new Error(`Could not find a mentorship record for ${student.tag}`);
+      }
+
+      return data;
+    },
+    { instructorDiscordId, menteeDiscordId: student.id }
+  );
 
   // Prevent going below zero
-  const newCount = Math.max(0, data.sessions_remaining - 1);
-  const { error: updateError } = await supabase
-    .from('mentorships')
-    .update({ 
-      sessions_remaining: newCount,
-      last_session_date: sessionDate.toISOString()
-    })
-    .eq('id', data.id);
+  const newCount = Math.max(0, mentorshipData.sessions_remaining - 1);
+  
+  // Update sessions with performance monitoring
+  await measurePerformance(
+    'session.update_sessions',
+    async () => {
+      const { error: updateError } = await supabase
+        .from('mentorships')
+        .update({ 
+          sessions_remaining: newCount,
+          last_session_date: sessionDate.toISOString()
+        })
+        .eq('id', mentorshipData.id);
 
-  if (updateError) {
-    console.error('Supabase error:', updateError);
-    await interaction.editReply(`Failed to update ${student.tag}.`);
-    return;
-  }
+      if (updateError) {
+        throw new Error(`Failed to update sessions: ${updateError.message}`);
+      }
+    },
+    { mentorshipId: mentorshipData.id, newCount }
+  );
 
   // Format date for display
   const dateDisplay = sessionDate.toLocaleDateString('en-US', { 
@@ -98,7 +106,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   });
 
   let message = `✅ ${student.tag} updated.\n\n`;
-  message += `📊 **Remaining sessions:** ${newCount}/${data.total_sessions}\n`;
+  message += `📊 **Remaining sessions:** ${newCount}/${mentorshipData.total_sessions}\n`;
   message += `📅 **Last session:** ${dateDisplay}`;
   
   if (newCount === 0) {
@@ -107,60 +115,69 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
   // Trigger testimonial request after 3rd session completed (when 1 remains)
   if (newCount === 1) {
-    try {
-      // Check if already requested or submitted
-      const { data: mentorshipCheck } = await supabase
-        .from('mentorships')
-        .select('testimonial_requested_at, testimonial_submitted')
-        .eq('id', data.id)
-        .single();
+    // Check if already requested or submitted (fire-and-forget)
+    handleAsyncError(
+      measurePerformance(
+        'session.testimonial_request',
+        async () => {
+          const { data: mentorshipCheck } = await supabase
+            .from('mentorships')
+            .select('testimonial_requested_at, testimonial_submitted')
+            .eq('id', mentorshipData.id)
+            .single();
 
-      const alreadyRequested = Boolean(mentorshipCheck?.testimonial_requested_at);
-      const alreadySubmitted = Boolean(mentorshipCheck?.testimonial_submitted);
+          const alreadyRequested = Boolean(mentorshipCheck?.testimonial_requested_at);
+          const alreadySubmitted = Boolean(mentorshipCheck?.testimonial_submitted);
 
-      if (!alreadyRequested && !alreadySubmitted) {
-        const menteeEmail = (data as any).mentees?.email || null;
-        const instructorName = (data as any).instructors?.name || 'your instructor';
+          if (!alreadyRequested && !alreadySubmitted) {
+            const menteeEmail = (mentorshipData as any).mentees?.email || null;
+            const instructorName = (mentorshipData as any).instructors?.name || 'your instructor';
 
-        if (menteeEmail) {
-          const sent = await sendTestimonialRequest({
-            menteeEmail: menteeEmail,
-            menteeName: student.tag,
-            instructorName: instructorName,
-            sessionNumber: data.total_sessions - newCount
-          });
+            if (menteeEmail) {
+              const sent = await sendTestimonialRequest({
+                menteeEmail: menteeEmail,
+                menteeName: student.tag,
+                instructorName: instructorName,
+                sessionNumber: mentorshipData.total_sessions - newCount
+              });
 
-          if (sent) {
-            await supabase
-              .from('mentorships')
-              .update({ testimonial_requested_at: new Date().toISOString() })
-              .eq('id', data.id);
+              if (sent) {
+                await supabase
+                  .from('mentorships')
+                  .update({ testimonial_requested_at: new Date().toISOString() })
+                  .eq('id', mentorshipData.id);
 
-            message += '\n\n📧 Testimonial request sent!';
+                message += '\n\n📧 Testimonial request sent!';
+              }
+            }
           }
-        }
-      }
 
-      // Append renewal notice to the command reply
-      message += '\n\nℹ️ Your mentorship renews automatically one month from your original purchase.' +
-        ' To pause or cancel before renewal, email huckleberryartinc@gmail.com.';
+          // Append renewal notice to the command reply
+          message += '\n\nℹ️ Your mentorship renews automatically one month from your original purchase.' +
+            ' To pause or cancel before renewal, email huckleberryartinc@gmail.com.';
 
-      // Send a friendly DM to the student
-      try {
-        await student.send(
-          `Hi ${student.username}! You’re on your last session for this cycle. ` +
-          `Your mentorship will renew automatically one month from your original purchase. ` +
-          `If you’d like to pause or cancel instead, please do so before the renewal. ` +
-          `Questions? Email us at huckleberryartinc@gmail.com.`
-        );
-      } catch (dmErr) {
-        // Ignore DM failures (user may have DMs closed)
-        console.log('Could not DM student about renewal notice:', dmErr);
-      }
-    } catch (e) {
-      console.log('Testimonial request flow error:', e);
-    }
+          // Send a friendly DM to the student (fire-and-forget)
+          handleAsyncError(
+            student.send(
+              `Hi ${student.username}! You're on your last session for this cycle. ` +
+              `Your mentorship will renew automatically one month from your original purchase. ` +
+              `If you'd like to pause or cancel instead, please do so before the renewal. ` +
+              `Questions? Email us at huckleberryartinc@gmail.com.`
+            ),
+            { commandName: 'session', operation: 'send_renewal_dm', studentId: student.id }
+          );
+        },
+        { mentorshipId: mentorshipData.id, newCount }
+      ),
+      { commandName: 'session', operation: 'testimonial_request' }
+    );
   }
 
   await interaction.editReply(message);
+}
+
+export async function execute(interaction: ChatInputCommandInteraction) {
+  await executeWithErrorHandling(interaction, executeCommand, {
+    commandName: 'session',
+  });
 }

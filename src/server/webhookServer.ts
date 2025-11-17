@@ -15,6 +15,7 @@ import { atomicallyUpsertMentorship, atomicallyIncrementMentorshipSessions, chec
 import { discordApi } from '../utils/discordApi.js';
 import { logger } from '../utils/logger.js';
 import { validateEmail, validateName, validateNumeric, validateCurrency, validateTransactionId } from '../utils/validation.js';
+import { measurePerformance } from '../utils/performance.js';
 import crypto from 'crypto';
 
 const app = express();
@@ -591,15 +592,27 @@ app.post('/webhook/kajabi', webhookRateLimitMiddleware, verifyWebhook, async (re
     
     offerIdString = String(offerIdNum);
 
-    // Lookup the instructor for this offer
-    const { data: offerData, error: offerError } = await supabase
-      .from('kajabi_offers')
-      .select('instructor_id, offer_name, sessions_per_purchase, discord_role_name, mentorship_type, instructors(name)')
-      .eq('offer_id', offerIdString)
-      .single();
+    // Lookup the instructor for this offer with performance monitoring
+    const offerData = await measurePerformance(
+      'webhook.kajabi.offer_lookup',
+      async () => {
+        const { data, error } = await supabase
+          .from('kajabi_offers')
+          .select('instructor_id, offer_name, sessions_per_purchase, discord_role_name, mentorship_type, instructors(name)')
+          .eq('offer_id', offerIdString)
+          .single();
 
-    if (offerError || !offerData) {
-      console.error('Offer not found:', offerIdString, offerError);
+        if (error || !data) {
+          throw new Error(`Offer not found: ${offerIdString} - ${error?.message || 'Unknown error'}`);
+        }
+        return data;
+      },
+      { offerId: offerIdString, email }
+    ).catch(async (error) => {
+      logger.error('Offer lookup failed in webhook', error instanceof Error ? error : new Error(String(error)), {
+        offerId: offerIdString,
+        email,
+      });
       
       // Notify admin of unmapped offer
       await notifyAdminError({
@@ -609,6 +622,10 @@ app.post('/webhook/kajabi', webhookRateLimitMiddleware, verifyWebhook, async (re
         studentEmail: email
       });
       
+      return null;
+    });
+
+    if (!offerData) {
       return res.status(404).json({ error: 'Offer not found in database' });
     }
 
@@ -662,19 +679,25 @@ app.post('/webhook/kajabi', webhookRateLimitMiddleware, verifyWebhook, async (re
     // Sessions per purchase: honor offer override, else default
     const sessionsPerPurchase = Number((offerData as { sessions_per_purchase?: number } | null)?.sessions_per_purchase) || CONFIG.DEFAULT_SESSIONS_PER_PURCHASE;
 
-    // Atomically deduplicate webhook processing using transaction_id
+    // Atomically deduplicate webhook processing using transaction_id with performance monitoring
     // This inserts the purchase record immediately, eliminating race conditions
-    const { shouldProcess, alreadyProcessed } = await checkAndMarkWebhookProcessed(
-      transactionId,
-      email,
-      offerIdString,
-      offerData.instructor_id,
-      offerPrice,
-      currency
+    const { shouldProcess, alreadyProcessed } = await measurePerformance(
+      'webhook.kajabi.deduplication',
+      async () => {
+        return await checkAndMarkWebhookProcessed(
+          transactionId,
+          email,
+          offerIdString,
+          offerData.instructor_id,
+          offerPrice,
+          currency
+        );
+      },
+      { transactionId, email, offerId: offerIdString }
     );
 
     if (!shouldProcess) {
-      console.log(`Webhook already processed for transaction ${transactionId}, skipping`);
+      logger.info('Webhook already processed, skipping', { transactionId, email });
       return res.json({
         success: true,
         message: 'Webhook already processed (deduplicated)',
@@ -682,22 +705,39 @@ app.post('/webhook/kajabi', webhookRateLimitMiddleware, verifyWebhook, async (re
       });
     }
 
-    // Check if this is a returning/existing student
-    const { data: existingMentee } = await supabase
-      .from('mentees')
-      .select('id, discord_id')
-      .eq('email', email.toLowerCase())
-      .maybeSingle();
+    // Check if this is a returning/existing student with performance monitoring
+    const existingMentee = await measurePerformance(
+      'webhook.kajabi.check_existing_mentee',
+      async () => {
+        const { data, error } = await supabase
+          .from('mentees')
+          .select('id, discord_id')
+          .eq('email', email.toLowerCase())
+          .maybeSingle();
+
+        if (error) {
+          throw new Error(`Failed to check existing mentee: ${error.message}`);
+        }
+        return data || null;
+      },
+      { email }
+    );
 
     // RETURNING STUDENT FLOW
     if (existingMentee && existingMentee.discord_id) {
-      const result = await handleReturningStudentRenewal({
-        email,
-        instructorId: offerData.instructor_id,
-        instructorName,
-        existingMentee: { id: existingMentee.id, discord_id: existingMentee.discord_id },
-        sessionsToAdd: sessionsPerPurchase,
-      });
+      const result = await measurePerformance(
+        'webhook.kajabi.returning_student_renewal',
+        async () => {
+          return await handleReturningStudentRenewal({
+            email,
+            instructorId: offerData.instructor_id,
+            instructorName,
+            existingMentee: { id: existingMentee.id, discord_id: existingMentee.discord_id },
+            sessionsToAdd: sessionsPerPurchase,
+          });
+        },
+        { email, menteeId: existingMentee.id, sessionsToAdd: sessionsPerPurchase }
+      );
 
       return res.json({
         success: true,
@@ -729,19 +769,25 @@ app.post('/webhook/kajabi', webhookRateLimitMiddleware, verifyWebhook, async (re
         }
       }
 
-      const { emailId } = await handleNewStudentPurchase({
-        email,
-        instructorId: offerData.instructor_id,
-        instructorName,
-        offerIdString,
-        offerName: ((offerData as { offer_name?: string } | null)?.offer_name) || 'Unknown Offer',
-        offerPrice,
-        transactionId,
-        currency,
-        sessionsPerPurchase,
-        menteeName,
-        discordRoleName: ((offerData as { discord_role_name?: string } | null)?.discord_role_name) || null,
-      });
+      const { emailId } = await measurePerformance(
+        'webhook.kajabi.new_student_purchase',
+        async () => {
+          return await handleNewStudentPurchase({
+            email,
+            instructorId: offerData.instructor_id,
+            instructorName,
+            offerIdString,
+            offerName: ((offerData as { offer_name?: string } | null)?.offer_name) || 'Unknown Offer',
+            offerPrice,
+            transactionId,
+            currency,
+            sessionsPerPurchase,
+            menteeName,
+            discordRoleName: ((offerData as { discord_role_name?: string } | null)?.discord_role_name) || null,
+          });
+        },
+        { email, offerId: offerIdString, instructorId: offerData.instructor_id }
+      );
 
       return res.json({
         success: true,
@@ -749,7 +795,10 @@ app.post('/webhook/kajabi', webhookRateLimitMiddleware, verifyWebhook, async (re
         email_id: emailId,
       });
     } catch (insertOrEmailError) {
-      console.error('Failed in new student flow:', insertOrEmailError);
+      logger.error('Failed in new student flow', insertOrEmailError instanceof Error ? insertOrEmailError : new Error(String(insertOrEmailError)), {
+        email,
+        offerId: offerIdString,
+      });
       await notifyAdminError({
         type: 'database_error',
         message: 'Failed to process pending join or send email',
@@ -760,7 +809,10 @@ app.post('/webhook/kajabi', webhookRateLimitMiddleware, verifyWebhook, async (re
     }
 
   } catch (error) {
-    console.error('Webhook error:', error);
+    logger.error('Unexpected error processing Kajabi webhook', error instanceof Error ? error : new Error(String(error)), {
+      email: req.body.member?.email || req.body.payload?.member_email || req.body.email,
+      offerId: req.body.offer?.id || req.body.payload?.offer_id || req.body.offer_id,
+    });
     
     // Notify admin of unexpected error
     await notifyAdminError({
@@ -802,17 +854,31 @@ app.post('/webhook/kajabi/cancellation', webhookRateLimitMiddleware, verifyWebho
       return res.status(400).json({ error: 'Invalid email format' });
     }
 
-    console.log(`Processing cancellation for: ${email}, Event: ${eventType}`);
+    logger.info('Processing cancellation webhook', { email, eventType });
 
-    // Find student by email
-    const { data: menteeData, error: menteeError } = await supabase
-      .from('mentees')
-      .select('id, discord_id')
-      .eq('email', email.toLowerCase())
-      .maybeSingle();
+    // Find student by email with performance monitoring
+    const menteeData = await measurePerformance(
+      'webhook.kajabi.cancellation.find_mentee',
+      async () => {
+        const { data, error } = await supabase
+          .from('mentees')
+          .select('id, discord_id')
+          .eq('email', email.toLowerCase())
+          .maybeSingle();
 
-    if (menteeError || !menteeData || !menteeData.discord_id) {
-      console.log(`No active mentee found for ${email} - they may not have joined Discord yet`);
+        if (error) {
+          throw new Error(`Failed to find mentee: ${error.message}`);
+        }
+        if (!data || !data.discord_id) {
+          return null;
+        }
+        return data;
+      },
+      { email }
+    );
+
+    if (!menteeData) {
+      logger.info('No active mentee found for cancellation', { email });
       return res.json({ 
         success: true, 
         message: 'No active Discord user found - nothing to do'
@@ -843,27 +909,40 @@ app.post('/webhook/kajabi/cancellation', webhookRateLimitMiddleware, verifyWebho
       }
     } catch (error) {
       // Log but continue - we have a default role name
-      console.warn('Failed to fetch mentee role name, using default:', error);
+      logger.warn('Failed to fetch mentee role name, using default', {
+        error: error instanceof Error ? error.message : String(error),
+        menteeId: menteeData.id,
+      });
     }
 
-    // Remove student role
-    const result = await removeStudentRole({
-      menteeDiscordId: menteeData.discord_id,
-      reason,
-      sendGoodbyeDm: true,
-      notifyAdmin: true,
-      client: undefined, // Use API method since we don't have client in webhook context
-      roleName: menteeRoleName
-    });
+    // Remove student role with performance monitoring
+    const result = await measurePerformance(
+      'webhook.kajabi.cancellation.remove_role',
+      async () => {
+        return await removeStudentRole({
+          menteeDiscordId: menteeData.discord_id,
+          reason,
+          sendGoodbyeDm: true,
+          notifyAdmin: true,
+          client: undefined, // Use API method since we don't have client in webhook context
+          roleName: menteeRoleName
+        });
+      },
+      { menteeId: menteeData.id, discordId: menteeData.discord_id, reason }
+    );
 
     if (result.success) {
-      console.log(`✅ Successfully processed cancellation for ${email}`);
+      logger.info('Successfully processed cancellation', { email, menteeId: menteeData.id });
       return res.json({ 
         success: true, 
         message: 'Student role removed successfully'
       });
     } else {
-      console.error(`Failed to remove role for ${email}:`, result.message);
+      logger.error('Failed to remove role in cancellation webhook', new Error(result.message), {
+        email,
+        menteeId: menteeData.id,
+        discordId: menteeData.discord_id,
+      });
       return res.status(500).json({ 
         error: 'Failed to remove student role',
         details: result.message
@@ -871,7 +950,9 @@ app.post('/webhook/kajabi/cancellation', webhookRateLimitMiddleware, verifyWebho
     }
 
   } catch (error) {
-    console.error('Cancellation webhook error:', error);
+    logger.error('Cancellation webhook error', error instanceof Error ? error : new Error(String(error)), {
+      email: req.body.member?.email || req.body.payload?.member_email || req.body.email,
+    });
     
     await notifyAdminError({
       type: 'cancellation_webhook_error',
@@ -885,10 +966,12 @@ app.post('/webhook/kajabi/cancellation', webhookRateLimitMiddleware, verifyWebho
 
 // Start server
 const server = app.listen(PORT, () => {
-  console.log(`Webhook server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
-  console.log(`Kajabi webhook: http://localhost:${PORT}/webhook/kajabi`);
-  console.log(`Kajabi cancellation webhook: http://localhost:${PORT}/webhook/kajabi/cancellation`);
+  logger.info('Webhook server started', {
+    port: PORT,
+    healthCheck: `http://localhost:${PORT}/health`,
+    kajabiWebhook: `http://localhost:${PORT}/webhook/kajabi`,
+    cancellationWebhook: `http://localhost:${PORT}/webhook/kajabi/cancellation`,
+  });
 });
 
 export default app;
