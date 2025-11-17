@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { useSession } from "next-auth/react";
+import type { Session } from "next-auth";
 import { useRouter } from "next/navigation";
 import { Upload, Copy, Check, X, Loader2, Image as ImageIcon } from "lucide-react";
 
@@ -30,7 +31,7 @@ export default function AssetsPage() {
       router.push("/login?callbackUrl=/assets");
       return;
     }
-    const role = session?.role;
+    const role = (session as Session & { role?: "student" | "instructor" | "admin" | "unknown" })?.role;
     if (role !== "admin") {
       router.push("/dashboard");
       return;
