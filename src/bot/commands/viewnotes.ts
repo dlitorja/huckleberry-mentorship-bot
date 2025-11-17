@@ -5,6 +5,9 @@ import { supabase } from '../supabaseClient.js';
 import { CONFIG } from '../../config/constants.js';
 import { getMentorshipByDiscordIds, getAnyMentorshipForMentee } from '../../utils/mentorship.js';
 import type { SessionNoteWithLinks } from '../../types/database.js';
+import { executeWithErrorHandling } from '../../utils/commandErrorHandler.js';
+import { measurePerformance } from '../../utils/performance.js';
+import { validatePositiveInteger } from '../../utils/validation.js';
 
 export const data = new SlashCommandBuilder()
   .setName('viewnotes')
@@ -31,13 +34,14 @@ export const data = new SlashCommandBuilder()
       .setMinValue(1)
   );
 
-export async function execute(interaction: ChatInputCommandInteraction) {
+async function executeCommand(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const student = interaction.options.getUser('student', true);
   const limitInput = interaction.options.getInteger('limit') || 5;
-  const page = interaction.options.getInteger('page') || 1;
-  const limit = Math.min(Math.max(1, limitInput), 25); // Clamp between 1 and 25
+  const pageInput = interaction.options.getInteger('page') || 1;
+  const limit = validatePositiveInteger(limitInput, 'limit', 1, 25);
+  const page = validatePositiveInteger(pageInput, 'page', 1);
   const userDiscordId = interaction.user.id;
 
   // Check if user is instructor or student
@@ -109,31 +113,35 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  // Fetch session notes with links in a single query (fixes N+1 issue)
-  // Add pagination support
+  // Fetch session notes with links in a single query (fixes N+1 issue) with performance monitoring
   const offset = (page - 1) * limit;
-  const { data: notes, error: notesError, count } = await supabase
-    .from('session_notes')
-    .select(`
-      id,
-      session_date,
-      notes,
-      created_at,
-      session_links (
-        session_note_id,
-        url,
-        title
-      )
-    `, { count: 'exact' })
-    .eq('mentorship_id', mentorshipId)
-    .order('session_date', { ascending: false })
-    .range(offset, offset + limit - 1);
+  const { notes, count } = await measurePerformance(
+    'viewnotes.fetch_notes',
+    async () => {
+      const { data, error, count: noteCount } = await supabase
+        .from('session_notes')
+        .select(`
+          id,
+          session_date,
+          notes,
+          created_at,
+          session_links (
+            session_note_id,
+            url,
+            title
+          )
+        `, { count: 'exact' })
+        .eq('mentorship_id', mentorshipId)
+        .order('session_date', { ascending: false })
+        .range(offset, offset + limit - 1);
 
-  if (notesError) {
-    console.error('Error fetching notes:', notesError);
-    await interaction.editReply('❌ Failed to fetch session notes.');
-    return;
-  }
+      if (error) {
+        throw new Error(`Failed to fetch notes: ${error.message}`);
+      }
+      return { notes: data || [], count: noteCount || 0 };
+    },
+    { mentorshipId, page, limit }
+  );
 
   if (!notes || notes.length === 0) {
     await interaction.editReply(`📝 No session notes found for ${student.tag}.`);
@@ -199,5 +207,11 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   await interaction.editReply({ embeds: [embed] });
+}
+
+export async function execute(interaction: ChatInputCommandInteraction) {
+  await executeWithErrorHandling(interaction, executeCommand, {
+    commandName: 'viewnotes',
+  });
 }
 

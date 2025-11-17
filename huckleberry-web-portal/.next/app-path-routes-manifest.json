@@ -1,0 +1,22 @@
+{
+  "/api/auth/[...nextauth]/route": "/api/auth/[...nextauth]",
+  "/api/images/[id]/route": "/api/images/[id]",
+  "/api/images/count/route": "/api/images/count",
+  "/api/images/download/route": "/api/images/download",
+  "/api/images/route": "/api/images",
+  "/api/images/upload/route": "/api/images/upload",
+  "/api/instructor/mentees/display-name/route": "/api/instructor/mentees/display-name",
+  "/api/instructor/mentorships/route": "/api/instructor/mentorships",
+  "/api/instructor/sessions/route": "/api/instructor/sessions",
+  "/api/mentee/dashboard/route": "/api/mentee/dashboard",
+  "/_not-found/page": "/_not-found",
+  "/api/notifications/enqueue/route": "/api/notifications/enqueue",
+  "/api/sessions/[id]/route": "/api/sessions/[id]",
+  "/api/sessions/route": "/api/sessions",
+  "/(auth)/login/page": "/login",
+  "/page": "/",
+  "/(dashboard)/dashboard/page": "/dashboard",
+  "/(dashboard)/sessions/[id]/page": "/sessions/[id]",
+  "/(dashboard)/instructor/page": "/instructor",
+  "/(dashboard)/sessions/page": "/sessions"
+}

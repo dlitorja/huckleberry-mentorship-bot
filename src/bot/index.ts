@@ -7,6 +7,9 @@ import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { supabase } from './supabaseClient.js';
 import { CONFIG, getSupportContactString } from '../config/constants.js';
+import { logger } from '../utils/logger.js';
+import { applyCommandRateLimit } from '../utils/commandRateLimit.js';
+import { handleCommandError } from '../utils/commandErrorHandler.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,7 +39,7 @@ for (const file of commandFiles) {
   const command = await import(fileUrl);
   if (command.data && command.execute) {
     commands.set(command.data.name, command);
-    console.log(`Loaded command: ${command.data.name}`);
+    logger.info('Loaded command', { commandName: command.data.name });
   }
 }
 
@@ -44,7 +47,11 @@ for (const file of commandFiles) {
 // Bot ready event (forward-compatible with discord.js v15)
 // --------------------
 const onReady = () => {
-  console.log(`Logged in as ${client.user?.tag}!`);
+  logger.info('Discord bot logged in', {
+    botTag: client.user?.tag,
+    botId: client.user?.id,
+    guildCount: client.guilds.cache.size,
+  });
 };
 client.once('ready', onReady);
 // v15+ emits 'clientReady' instead of 'ready'
@@ -56,38 +63,43 @@ if ('clientReady' in client) {
 
 // Prevent crashes on Discord client errors
 client.on('error', (err) => {
-  console.error('Discord client error:', err);
+  logger.error('Discord client error', err);
 });
 client.on('shardError', (err) => {
-  console.error('Discord shard error:', err);
+  logger.error('Discord shard error', err);
 });
 
 // --------------------
-// Interaction handler
+// Interaction handler with rate limiting
 // --------------------
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   const command = commands.get(interaction.commandName);
   if (!command) {
-    console.log(`Command not found: ${interaction.commandName}`);
+    logger.warn('Command not found', { commandName: interaction.commandName, userId: interaction.user.id });
     return;
+  }
+
+  // Apply rate limiting before executing command
+  const rateLimitAllowed = await applyCommandRateLimit(interaction as ChatInputCommandInteraction);
+  if (!rateLimitAllowed) {
+    return; // Rate limit message already sent
   }
 
   try {
     await command.execute(interaction as ChatInputCommandInteraction);
   } catch (err) {
-    console.error('Command execution error:', err);
-    // Gracefully handle cases where the interaction is no longer valid
-    try {
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply('An error occurred while handling your command.');
-      } else if (interaction.isRepliable()) {
-        await interaction.reply({ content: 'An error occurred while handling your command.', flags: MessageFlags.Ephemeral });
+    // Use standardized error handler
+    await handleCommandError(
+      err,
+      interaction as ChatInputCommandInteraction,
+      {
+        commandName: interaction.commandName,
+        userId: interaction.user.id,
+        guildId: interaction.guildId || undefined,
       }
-    } catch {
-      // Ignore follow-up errors like Unknown interaction (10062) or already acknowledged (40060)
-    }
+    );
   }
 });
 
@@ -95,7 +107,11 @@ client.on('interactionCreate', async interaction => {
 // Guild member add handler
 // --------------------
 client.on('guildMemberAdd', async member => {
-  console.log(`New member joined: ${member.user.tag} (${member.user.id})`);
+  logger.info('New member joined guild', {
+    userId: member.user.id,
+    username: member.user.username,
+    guildId: member.guild.id,
+  });
 
   try {
     // Check if this user has a pending join (from Kajabi purchase)
@@ -107,7 +123,7 @@ client.on('guildMemberAdd', async member => {
       .single();
 
     if (error || !pendingJoin) {
-      console.log(`No pending join found for ${member.user.tag}`);
+      logger.debug('No pending join found for new member', { userId: member.user.id });
       return;
     }
 
@@ -115,13 +131,17 @@ client.on('guildMemberAdd', async member => {
     const role = member.guild.roles.cache.find(r => r.name === '1-on-1 Mentee');
 
     if (!role) {
-      console.error('Could not find "1-on-1 Mentee" role');
+      logger.error('Could not find "1-on-1 Mentee" role', undefined, { guildId: member.guild.id });
       return;
     }
 
     // Assign the role
     await member.roles.add(role);
-    console.log(`Assigned "1-on-1 Mentee" role to ${member.user.tag}`);
+    logger.info('Assigned mentee role to new member', {
+      userId: member.user.id,
+      roleId: role.id,
+      pendingJoinId: pendingJoin.id,
+    });
 
     // Update pending join to mark as completed
     await supabase
@@ -136,7 +156,7 @@ client.on('guildMemberAdd', async member => {
       .eq('id', pendingJoin.instructor_id)
       .single();
 
-    // Welcome message
+    // Welcome message (fire-and-forget)
     try {
       const instructorMention = instructorInfo?.discord_id ? `<@${instructorInfo.discord_id}>` : instructorInfo?.name || 'your instructor';
       await member.send(
@@ -146,12 +166,19 @@ client.on('guildMemberAdd', async member => {
         `Please inform them of your schedule so they can check their availability -- please include your time zone, as all our instructors and students are all over the world!\n\n` +
         `Having any issues? ${getSupportContactString()}`
       );
+      logger.debug('Welcome DM sent to new member', { userId: member.user.id });
     } catch (dmError) {
-      console.log(`Could not DM ${member.user.tag}:`, dmError);
+      logger.warn('Could not send welcome DM to new member', {
+        error: dmError instanceof Error ? dmError.message : String(dmError),
+        userId: member.user.id,
+      });
     }
 
   } catch (error) {
-    console.error('Error handling new member:', error);
+    logger.error('Error handling new member', error instanceof Error ? error : new Error(String(error)), {
+      userId: member.user.id,
+      guildId: member.guild.id,
+    });
   }
 });
 
@@ -159,7 +186,7 @@ client.on('guildMemberAdd', async member => {
 // Log in to Discord
 // --------------------
 if (!process.env.DISCORD_BOT_TOKEN) {
-  console.error('DISCORD_BOT_TOKEN not set.');
+  logger.error('DISCORD_BOT_TOKEN not set', undefined);
   process.exit(1);
 }
 
@@ -169,11 +196,12 @@ client.login(process.env.DISCORD_BOT_TOKEN);
 // Graceful shutdown
 // --------------------
 async function shutdown(signal: string) {
-  console.log(`${signal} received. Shutting down Discord bot gracefully...`);
+  logger.info(`${signal} received. Shutting down Discord bot gracefully...`);
   try {
     await client.destroy();
+    logger.info('Discord bot destroyed successfully');
   } catch (err) {
-    console.error('Error destroying Discord client:', err);
+    logger.error('Error destroying Discord client', err instanceof Error ? err : new Error(String(err)));
   } finally {
     process.exit(0);
   }
