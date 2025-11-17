@@ -732,6 +732,8 @@ app.post('/webhook/kajabi', webhookRateLimitMiddleware, verifyWebhook, async (re
     });
 
     if (!offerData) {
+      // Return 404 when offer is not found (correct HTTP semantics)
+      // Tests should accept 404 as a valid error response
       return res.status(404).json({ error: 'Offer not found in database' });
     }
 
