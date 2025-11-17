@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SignOutButton } from "@/components/SignOutButton";
+import { SearchBar } from "@/components/SearchBar";
 import { getToken } from "next-auth/jwt";
 import { cookies } from "next/headers";
 
@@ -48,7 +49,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           <SignOutButton />
         </div>
       </aside>
-      <main className="p-6 bg-gray-50 dark:bg-neutral-950">{children}</main>
+      <main className="p-6 bg-gray-50 dark:bg-neutral-950">
+        <div className="mb-4">
+          <SearchBar />
+        </div>
+        {children}
+      </main>
     </div>
   );
 }

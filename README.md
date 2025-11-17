@@ -19,6 +19,7 @@ A comprehensive Discord bot and webhook system for managing 1-on-1 mentorship pr
 - **Image Upload & Gallery**: Drag-and-drop image uploads with compression, thumbnails, and lightbox viewing
 - **Rich Text Session Notes**: Tiptap-powered rich text editor for detailed session documentation
 - **Image Comments & Feedback**: Instructors can provide feedback directly on uploaded images
+- **Search & Filter**: Global search across notes and image captions, date range filtering, and tag-based filtering
 - **Image Assets Hosting**: Admin-only page for hosting high-quality images for Kajabi landing pages with easy URL copying
 - **Role-Based Access**: Students see only their data, instructors see their mentees, admins have full access
 - **Discord OAuth Integration**: Seamless authentication using existing Discord accounts

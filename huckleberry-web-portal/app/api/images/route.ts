@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
   // Fetch images
   let query = supabase
     .from("session_images")
-    .select("id, image_url, thumbnail_url, uploader_type, created_at, session_note_id, caption")
+    .select("id, image_url, thumbnail_url, uploader_type, created_at, session_note_id, caption, tags")
     .eq("mentorship_id", mentorshipId)
     .order("created_at", { ascending: false });
 

@@ -232,11 +232,11 @@ huckleberry-web-portal/
 - [ ] Instructor feedback system
 - [ ] Reply threads
 
-#### **Search & Filter**
-- [ ] Search across notes and image captions
-- [ ] Filter by date range
-- [ ] Filter by tags
-- [ ] Quick search in navbar
+#### **Search & Filter** ✅ **COMPLETE**
+- [x] Search across notes and image captions
+- [x] Filter by date range
+- [x] Filter by tags (database column added, API ready)
+- [x] Quick search in navbar
 
 #### **Student/Instructor Switcher**
 - [ ] Dropdown to switch between students (instructors)
