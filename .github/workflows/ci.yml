@@ -59,7 +59,7 @@ jobs:
         continue-on-error: true  # Allow warnings, but still report them
       
       - name: Build web portal
-        run: npm run build
+        run: npm run build 2>&1 | tee build.log || (cat build.log && exit 1)
         working-directory: ./huckleberry-web-portal
         continue-on-error: false
       
