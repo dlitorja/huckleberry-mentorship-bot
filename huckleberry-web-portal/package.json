@@ -7,7 +7,11 @@
     "dev": "npx next dev",
     "build": "npx next build",
     "start": "npx next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "security:audit": "npm audit",
+    "security:audit:fix": "npm audit fix",
+    "security:audit:force": "npm audit --audit-level=moderate",
+    "security:outdated": "npm outdated"
   },
   "dependencies": {
     "@diceui/combobox": "^1.2.2",

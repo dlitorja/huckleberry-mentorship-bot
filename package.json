@@ -15,7 +15,11 @@
     "stop:all": "pm2 stop ecosystem.config.js",
     "restart:all": "pm2 restart ecosystem.config.js",
     "push:all": "git push origin main && git push gitlab main",
-    "lint": "eslint \"src/**/*.{ts,tsx,js}\""
+    "lint": "eslint \"src/**/*.{ts,tsx,js}\"",
+    "security:audit": "npm audit",
+    "security:audit:fix": "npm audit fix",
+    "security:audit:force": "npm audit --audit-level=moderate",
+    "security:outdated": "npm outdated"
   },
   "dependencies": {
     "@discordjs/builders": "^1.13.0",
