@@ -1,8 +1,9 @@
 // src/bot/commands/removestudent.ts
 // Admin-only command to remove a student's 1-on-1 Mentee role
 
-import { SlashCommandBuilder, CommandInteraction, PermissionFlagsBits } from 'discord.js';
+import { SlashCommandBuilder, ChatInputCommandInteraction, PermissionFlagsBits } from 'discord.js';
 import { removeStudentRole } from '../../utils/roleManagement.js';
+import { CONFIG } from '../../config/constants.js';
 
 export const data = new SlashCommandBuilder()
   .setName('removestudent')
@@ -27,13 +28,13 @@ export const data = new SlashCommandBuilder()
   )
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
 
-export async function execute(interaction: CommandInteraction) {
+export async function execute(interaction: ChatInputCommandInteraction) {
   // Defer reply since this might take a moment
   await interaction.deferReply({ ephemeral: true });
 
   try {
     // Verify admin permission
-    const adminId = process.env.DISCORD_ADMIN_ID;
+    const adminId = CONFIG.DISCORD_ADMIN_ID;
     if (interaction.user.id !== adminId) {
       return await interaction.editReply({
         content: '❌ This command is only available to administrators.'

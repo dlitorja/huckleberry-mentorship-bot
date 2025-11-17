@@ -2,7 +2,9 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, MessageFlags, EmbedBuilder } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
-import { getMentorshipByDiscordIds } from '../../utils/mentorship.js';
+import { CONFIG } from '../../config/constants.js';
+import { getMentorshipByDiscordIds, getAnyMentorshipForMentee } from '../../utils/mentorship.js';
+import type { SessionNoteWithLinks } from '../../types/database.js';
 
 export const data = new SlashCommandBuilder()
   .setName('viewnotes')
@@ -16,15 +18,26 @@ export const data = new SlashCommandBuilder()
   .addIntegerOption(option =>
     option
       .setName('limit')
-      .setDescription('Number of recent sessions to show (default: 5)')
+      .setDescription('Number of recent sessions to show (default: 5, max: 25)')
       .setRequired(false)
+      .setMinValue(1)
+      .setMaxValue(25)
+  )
+  .addIntegerOption(option =>
+    option
+      .setName('page')
+      .setDescription('Page number (default: 1)')
+      .setRequired(false)
+      .setMinValue(1)
   );
 
 export async function execute(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   const student = interaction.options.getUser('student', true);
-  const limit = interaction.options.getInteger('limit') || 5;
+  const limitInput = interaction.options.getInteger('limit') || 5;
+  const page = interaction.options.getInteger('page') || 1;
+  const limit = Math.min(Math.max(1, limitInput), 25); // Clamp between 1 and 25
   const userDiscordId = interaction.user.id;
 
   // Check if user is instructor or student
@@ -49,7 +62,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   let mentorshipId: string;
 
   // Check if user is admin (admin can view anyone)
-  const isAdmin = userDiscordId === process.env.DISCORD_ADMIN_ID;
+  const isAdmin = userDiscordId === CONFIG.DISCORD_ADMIN_ID;
 
   if (instructorData) {
     // User is an instructor - get their mentorship with this student (optimized)
@@ -64,13 +77,11 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     }
     mentorshipId = mentorshipData.id;
   } else if (userDiscordId === student.id) {
-    // User is viewing their own notes - get any mentorship for this mentee
-    const { data: mentorshipData, error: mentorshipError } = await supabase
-      .from('mentorships')
-      .select('id')
-      .eq('mentee_id', menteeData.id)
-      .limit(1)
-      .single();
+    // User is viewing their own notes - get active mentorship for this mentee
+    const { data: mentorshipData, error: mentorshipError } = await getAnyMentorshipForMentee(
+      student.id,
+      true // requireActive = true to only get active mentorships
+    );
 
     if (mentorshipError || !mentorshipData) {
       await interaction.editReply('Could not find your mentorship record.');
@@ -78,11 +89,12 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     }
     mentorshipId = mentorshipData.id;
   } else if (isAdmin) {
-    // Admin viewing any student - get their most recent mentorship
+    // Admin viewing any student - get their most recent active mentorship
     const { data: mentorshipData, error: mentorshipError } = await supabase
       .from('mentorships')
       .select('id')
       .eq('mentee_id', menteeData.id)
+      .eq('status', 'active') // Only get active mentorships
       .order('created_at', { ascending: false })
       .limit(1)
       .single();
@@ -97,13 +109,25 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  // Fetch session notes
-  const { data: notes, error: notesError } = await supabase
+  // Fetch session notes with links in a single query (fixes N+1 issue)
+  // Add pagination support
+  const offset = (page - 1) * limit;
+  const { data: notes, error: notesError, count } = await supabase
     .from('session_notes')
-    .select('id, session_date, notes, created_at')
+    .select(`
+      id,
+      session_date,
+      notes,
+      created_at,
+      session_links (
+        session_note_id,
+        url,
+        title
+      )
+    `, { count: 'exact' })
     .eq('mentorship_id', mentorshipId)
     .order('session_date', { ascending: false })
-    .limit(limit);
+    .range(offset, offset + limit - 1);
 
   if (notesError) {
     console.error('Error fetching notes:', notesError);
@@ -116,18 +140,13 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  // Fetch links for these notes
-  const noteIds = notes.map((n: any) => n.id);
-  const { data: links } = await supabase
-    .from('session_links')
-    .select('session_note_id, url, title')
-    .in('session_note_id', noteIds);
-
-  const linksByNoteId = (links || []).reduce((acc: any, link: any) => {
-    if (!acc[link.session_note_id]) acc[link.session_note_id] = [];
-    acc[link.session_note_id].push(link);
-    return acc;
-  }, {});
+  // Organize links by note ID (from the joined data)
+  const linksByNoteId: Record<string, Array<{ url: string; title: string | null }>> = {};
+  (notes as SessionNoteWithLinks[]).forEach((note) => {
+    if (note.session_links && Array.isArray(note.session_links)) {
+      linksByNoteId[note.id] = note.session_links;
+    }
+  });
 
   // Create embed
   const embed = new EmbedBuilder()
@@ -136,7 +155,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     .setTimestamp();
 
   // Add fields for each session
-  notes.forEach((note: any, index: number) => {
+  (notes as SessionNoteWithLinks[]).forEach((note, index: number) => {
     if (index < 10) { // Limit to 10 sessions to avoid embed limits
       const date = new Date(note.session_date).toLocaleDateString('en-US', { 
         month: 'short', 
@@ -155,7 +174,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       const sessionLinks = linksByNoteId[note.id];
       if (sessionLinks && sessionLinks.length > 0) {
         fieldValue += '\n\n🔗 **Links:**\n';
-        sessionLinks.forEach((link: any) => {
+        sessionLinks.forEach((link: { url: string; title: string | null }) => {
           fieldValue += `• [${link.title || 'Link'}](${link.url})\n`;
         });
       }
@@ -168,8 +187,15 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     }
   });
 
-  if (notes.length > 10) {
-    embed.setFooter({ text: `Showing 10 of ${notes.length} sessions` });
+  // Add pagination info to footer
+  const totalSessions = count || notes.length;
+  const totalPages = Math.ceil(totalSessions / limit);
+  if (totalPages > 1) {
+    embed.setFooter({ 
+      text: `Page ${page} of ${totalPages} • Showing ${notes.length} of ${totalSessions} sessions` 
+    });
+  } else if (totalSessions > limit) {
+    embed.setFooter({ text: `Showing ${notes.length} of ${totalSessions} sessions` });
   }
 
   await interaction.editReply({ embeds: [embed] });

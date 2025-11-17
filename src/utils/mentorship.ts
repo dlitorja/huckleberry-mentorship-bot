@@ -14,8 +14,9 @@ export async function getMentorshipByDiscordIds(params: {
   instructorDiscordId: string;
   menteeDiscordId: string;
   status?: 'active' | 'ended';
+  requireActive?: boolean; // Default to true for safety
 }): Promise<{ data: MentorshipWithRelations | null; error: unknown }> {
-  const { instructorDiscordId, menteeDiscordId, status } = params;
+  const { instructorDiscordId, menteeDiscordId, status, requireActive = true } = params;
 
   let query = supabase
     .from('mentorships')
@@ -33,8 +34,11 @@ export async function getMentorshipByDiscordIds(params: {
     .eq('instructors.discord_id', instructorDiscordId)
     .eq('mentees.discord_id', menteeDiscordId);
 
+  // Default to filtering for active mentorships unless explicitly told otherwise
   if (status) {
     query = query.eq('status', status);
+  } else if (requireActive) {
+    query = query.eq('status', 'active');
   }
 
   const { data, error } = await query.maybeSingle();
@@ -42,8 +46,11 @@ export async function getMentorshipByDiscordIds(params: {
   return { data: (data as MentorshipWithRelations | null) ?? null, error: null };
 }
 
-export async function getAnyMentorshipForMentee(menteeDiscordId: string): Promise<{ data: MentorshipWithRelations | null; error: unknown }> {
-  const { data, error } = await supabase
+export async function getAnyMentorshipForMentee(
+  menteeDiscordId: string,
+  requireActive: boolean = true
+): Promise<{ data: MentorshipWithRelations | null; error: unknown }> {
+  let query = supabase
     .from('mentorships')
     .select(
       `
@@ -55,7 +62,14 @@ export async function getAnyMentorshipForMentee(menteeDiscordId: string): Promis
       instructors ( id, name, discord_id )
     `
     )
-    .eq('mentees.discord_id', menteeDiscordId)
+    .eq('mentees.discord_id', menteeDiscordId);
+
+  // Default to filtering for active mentorships
+  if (requireActive) {
+    query = query.eq('status', 'active');
+  }
+
+  const { data, error } = await query
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();

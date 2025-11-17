@@ -3,7 +3,9 @@
 
 import { Resend } from 'resend';
 
-const ADMIN_ID = process.env.DISCORD_ADMIN_ID;
+import { CONFIG } from '../config/constants.js';
+
+const ADMIN_ID = CONFIG.DISCORD_ADMIN_ID;
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
 
@@ -18,7 +20,7 @@ interface PurchaseNotification {
 }
 
 interface ErrorNotification {
-  type: 'email_failed' | 'role_assignment_failed' | 'database_error' | 'webhook_error' | 'cancellation_webhook_error';
+  type: 'email_failed' | 'role_assignment_failed' | 'database_error' | 'webhook_error' | 'cancellation_webhook_error' | 'role_removal_error';
   message: string;
   details?: unknown;
   studentEmail?: string;
@@ -36,48 +38,19 @@ interface FailedJoinAlert {
  * Send a DM to the admin
  */
 async function sendAdminDM(content: string): Promise<boolean> {
-  if (!ADMIN_ID || !BOT_TOKEN) {
-    console.error('Missing DISCORD_ADMIN_ID or DISCORD_BOT_TOKEN');
+  if (!ADMIN_ID) {
+    console.error('Missing DISCORD_ADMIN_ID');
     return false;
   }
 
   try {
-    // Create DM channel with admin
-    const dmResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bot ${BOT_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        recipient_id: ADMIN_ID,
-      }),
-    });
-
-    const dmChannel: { id?: string } = await dmResponse.json();
-
-    if (!dmChannel.id) {
-      console.error('Failed to create DM channel with admin:', dmChannel);
-      return false;
+    // Use centralized Discord API utility
+    const { discordApi } = await import('./discordApi.js');
+    const sent = await discordApi.sendDM(ADMIN_ID, content);
+    if (sent) {
+      console.log('✅ Admin notification sent');
     }
-
-    // Send message
-    const messageResponse = await fetch(`https://discord.com/api/channels/${dmChannel.id}/messages`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bot ${BOT_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ content }),
-    });
-
-    if (!messageResponse.ok) {
-      console.error('Failed to send admin DM:', await messageResponse.text());
-      return false;
-    }
-
-    console.log('✅ Admin notification sent');
-    return true;
+    return sent;
   } catch (error) {
     console.error('Error sending admin DM:', error);
     return false;
@@ -85,9 +58,23 @@ async function sendAdminDM(content: string): Promise<boolean> {
 }
 
 /**
- * Notify admin of a new purchase via email
+ * Notify admin of a new purchase via email and Discord DM
  */
 export async function notifyAdminPurchase(info: PurchaseNotification): Promise<void> {
+  // Prepare the message content for both email and DM
+  const dmMessage = `
+🛒 **NEW PURCHASE ALERT**
+
+👤 **Student:** ${info.studentEmail}
+👨‍🏫 **Instructor:** ${info.instructorName}
+📦 **Offer:** ${info.offerName}
+${info.offerPrice ? `💰 **Price:** $${info.offerPrice}` : ''}
+⏰ **Time:** ${new Date().toLocaleString()}
+
+📧 Invite email has been sent. Waiting for student to join Discord...
+  `.trim();
+
+  // Send email
   try {
     const { data, error } = await resend.emails.send({
       from: process.env.RESEND_FROM_EMAIL!,
@@ -119,24 +106,23 @@ export async function notifyAdminPurchase(info: PurchaseNotification): Promise<v
 
     if (error) {
       console.error('Failed to send admin purchase notification email:', error);
-      // Fallback to DM if email fails
-      const dmMessage = `
-🛒 **NEW PURCHASE ALERT** (Email failed, using DM)
-
-👤 **Student:** ${info.studentEmail}
-👨‍🏫 **Instructor:** ${info.instructorName}
-📦 **Offer:** ${info.offerName}
-${info.offerPrice ? `💰 **Price:** $${info.offerPrice}` : ''}
-⏰ **Time:** ${new Date().toLocaleString()}
-
-📧 Invite email has been sent. Waiting for student to join Discord...
-      `.trim();
-      await sendAdminDM(dmMessage);
     } else {
       console.log('✅ Admin purchase notification email sent:', data?.id);
     }
   } catch (error) {
-    console.error('Error sending admin purchase notification:', error);
+    console.error('Error sending admin purchase notification email:', error);
+  }
+
+  // Always send Discord DM (regardless of email success/failure)
+  try {
+    const dmSent = await sendAdminDM(dmMessage);
+    if (dmSent) {
+      console.log('✅ Admin purchase notification Discord DM sent');
+    } else {
+      console.error('⚠️ Failed to send admin purchase notification Discord DM');
+    }
+  } catch (error) {
+    console.error('Error sending admin purchase notification Discord DM:', error);
   }
 }
 
@@ -144,11 +130,13 @@ ${info.offerPrice ? `💰 **Price:** $${info.offerPrice}` : ''}
  * Notify admin of an error
  */
 export async function notifyAdminError(error: ErrorNotification): Promise<void> {
-  const emoji = {
+  const emoji: Record<ErrorNotification['type'], string> = {
     email_failed: '📧',
     role_assignment_failed: '🎭',
     database_error: '💾',
-    webhook_error: '🔗'
+    webhook_error: '🔗',
+    cancellation_webhook_error: '🔗',
+    role_removal_error: '🎭'
   };
 
   let message = `

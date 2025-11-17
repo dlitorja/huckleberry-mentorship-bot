@@ -1,0 +1,11 @@
+{
+  "/api/sessions/route": "app/api/sessions/route.js",
+  "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
+  "/api/mentee/dashboard/route": "app/api/mentee/dashboard/route.js",
+  "/api/images/route": "app/api/images/route.js",
+  "/api/images/count/route": "app/api/images/count/route.js",
+  "/api/sessions/[id]/route": "app/api/sessions/[id]/route.js",
+  "/(dashboard)/sessions/page": "app/(dashboard)/sessions/page.js",
+  "/(dashboard)/dashboard/page": "app/(dashboard)/dashboard/page.js",
+  "/(dashboard)/sessions/[id]/page": "app/(dashboard)/sessions/[id]/page.js"
+}

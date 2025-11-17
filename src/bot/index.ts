@@ -49,8 +49,10 @@ const onReady = () => {
 client.once('ready', onReady);
 // v15+ emits 'clientReady' instead of 'ready'
 // Register both to be forward-compatible
-// @ts-expect-error - 'clientReady' will exist in v15
-client.once('clientReady', onReady);
+// @ts-ignore - 'clientReady' may exist in future Discord.js versions
+if ('clientReady' in client) {
+  client.once('clientReady' as never, onReady);
+}
 
 // Prevent crashes on Discord client errors
 client.on('error', (err) => {

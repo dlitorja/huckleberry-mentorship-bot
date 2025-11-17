@@ -24,7 +24,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   // Admin check
-  const ADMIN_USER_ID = process.env.DISCORD_ADMIN_ID;
+  const ADMIN_USER_ID = CONFIG.DISCORD_ADMIN_ID;
   
   if (!ADMIN_USER_ID) {
     await interaction.editReply('⚠️ Admin user ID is not configured.');

@@ -3,8 +3,10 @@
 
 import { Client } from 'discord.js';
 import { supabase } from '../bot/supabaseClient.js';
-import { notifyAdminError } from './adminNotifications.js';
 import { CONFIG, getSupportContactString } from '../config/constants.js';
+import { notifyAdminError } from './adminNotifications.js';
+import { discordApi } from './discordApi.js';
+import { logger } from './logger.js';
 
 type DiscordDmChannel = { id?: string };
 type DiscordRole = { id?: string; name?: string };
@@ -13,22 +15,15 @@ let cachedRoleIds: Record<string, string> = {};
 async function getRoleIdByName(roleName: string): Promise<string | null> {
   if (cachedRoleIds[roleName]) return cachedRoleIds[roleName];
   try {
-    const rolesResponse = await fetch(
-      `https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/roles`,
-      {
-        headers: {
-          Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-        },
-      }
-    );
-    const roles: DiscordRole[] = await rolesResponse.json();
-    const role = roles.find((r) => r && r.name === roleName);
-    if (role?.id) {
-      cachedRoleIds[roleName] = role.id;
+    const roleId = await discordApi.findRoleByName(roleName);
+    if (roleId) {
+      cachedRoleIds[roleName] = roleId;
       return cachedRoleIds[roleName];
     }
   } catch (err) {
-    console.error('Failed to fetch Discord roles:', err);
+    logger.error('Failed to fetch Discord role by name', err instanceof Error ? err : new Error(String(err)), {
+      roleName,
+    });
   }
   return null;
 }
@@ -40,6 +35,8 @@ interface RemoveStudentOptions {
   notifyAdmin?: boolean;
   client?: Client;
   roleName?: string; // dynamic role removal (default "1-on-1 Mentee")
+  mentorshipId?: string; // Optional: target specific mentorship instead of all
+  instructorId?: string; // Optional: target specific instructor's mentorship
 }
 
 interface RemoveStudentResult {
@@ -52,7 +49,16 @@ interface RemoveStudentResult {
  * Removes the "1-on-1 Mentee" role from a student and updates their mentorship status
  */
 export async function removeStudentRole(options: RemoveStudentOptions): Promise<RemoveStudentResult> {
-  const { menteeDiscordId, reason = 'Mentorship ended', sendGoodbyeDm = true, notifyAdmin = true, client, roleName = '1-on-1 Mentee' } = options;
+  const { 
+    menteeDiscordId, 
+    reason = 'Mentorship ended', 
+    sendGoodbyeDm = true, 
+    notifyAdmin = true, 
+    client, 
+    roleName = '1-on-1 Mentee',
+    mentorshipId,
+    instructorId
+  } = options;
 
   try {
     // Get mentee data from database
@@ -70,8 +76,17 @@ export async function removeStudentRole(options: RemoveStudentOptions): Promise<
       };
     }
 
-    // Update mentorship status to 'ended'
-    const { error: updateError } = await supabase
+    // Check if there are any remaining active mentorships BEFORE updating
+    // This helps us decide if we need to remove the Discord role
+    const { data: activeMentorshipsBefore } = await supabase
+      .from('mentorships')
+      .select('id')
+      .eq('mentee_id', menteeData.id)
+      .eq('status', 'active')
+      .limit(1);
+
+    // Build query to target specific mentorship(s) instead of all
+    let mentorshipQuery = supabase
       .from('mentorships')
       .update({ 
         status: 'ended',
@@ -80,18 +95,68 @@ export async function removeStudentRole(options: RemoveStudentOptions): Promise<
       })
       .eq('mentee_id', menteeData.id);
 
-    if (updateError) {
-      console.error('Failed to update mentorship status:', updateError);
+    // If mentorshipId is provided, target only that specific mentorship
+    if (mentorshipId) {
+      mentorshipQuery = mentorshipQuery.eq('id', mentorshipId);
+    }
+    // If instructorId is provided, target only that instructor's mentorship
+    else if (instructorId) {
+      mentorshipQuery = mentorshipQuery.eq('instructor_id', instructorId);
+    }
+    // Otherwise, only end ACTIVE mentorships (not already ended ones)
+    // This prevents accidentally ending mentorships that are already ended
+    else {
+      mentorshipQuery = mentorshipQuery.eq('status', 'active');
     }
 
-    // Remove Discord role
-    const roleRemoved = await removeDiscordRole(menteeDiscordId, roleName, client);
+    const { error: updateError, data: updatedMentorships } = await mentorshipQuery.select('id');
 
-    if (!roleRemoved) {
+    if (updateError) {
+      console.error('Failed to update mentorship status:', updateError);
       return {
         success: false,
-        message: 'Failed to remove Discord role - student may have already left the server'
+        message: 'Failed to update mentorship status',
+        error: updateError
       };
+    }
+
+    // Check if there are any remaining active mentorships AFTER update
+    // Only remove Discord role if ALL mentorships are ended
+    const { data: activeMentorshipsAfter } = await supabase
+      .from('mentorships')
+      .select('id')
+      .eq('mentee_id', menteeData.id)
+      .eq('status', 'active')
+      .limit(1);
+
+    // Only remove Discord role if no active mentorships remain
+    if (!activeMentorshipsAfter || activeMentorshipsAfter.length === 0) {
+      // Try to remove Discord role first (non-critical operation)
+      // If it fails, we still want to mark the mentorship as ended in DB
+      const roleRemoved = await removeDiscordRole(menteeDiscordId, roleName, client);
+
+      if (!roleRemoved) {
+        // Log warning but don't fail - DB update succeeded
+        console.warn(`Failed to remove Discord role for ${menteeDiscordId} - mentorship still marked as ended in database`);
+        // Notify admin about the Discord role removal failure
+        if (notifyAdmin) {
+          await notifyAdminError({
+            type: 'role_removal_error',
+            message: `Failed to remove Discord role after ending mentorship`,
+            details: { discordId: menteeDiscordId, email: menteeData.email },
+            studentEmail: menteeData.email,
+            studentDiscordId: menteeDiscordId,
+          });
+        }
+        // Still return success since DB update worked
+        return {
+          success: true,
+          message: `Mentorship marked as ended, but Discord role removal failed. Admin notified.`
+        };
+      }
+    } else {
+      // Still has active mentorships, don't remove role
+      console.log(`Not removing Discord role - student still has ${activeMentorshipsAfter.length} active mentorship(s)`);
     }
 
     // Send goodbye DM (optional)
@@ -178,19 +243,13 @@ async function removeDiscordRole(discordId: string, roleName: string, client?: C
         return false;
       }
 
-      // Remove the role
-      await fetch(
-        `https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/members/${discordId}/roles/${roleId}`,
-        {
-          method: 'DELETE',
-          headers: {
-            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-          },
-        }
-      );
-
-      console.log(`✅ Removed ${roleName} role from ${discordId}`);
-      return true;
+      // Remove the role using rate-limited API
+      const removed = await discordApi.removeRoleFromMember(discordId, roleId);
+      if (removed) {
+        logger.info('Removed Discord role from member', { discordId, roleName, roleId });
+        return true;
+      }
+      return false;
     }
   } catch (error) {
     console.error('Error removing Discord role:', error);
@@ -203,34 +262,15 @@ async function removeDiscordRole(discordId: string, roleName: string, client?: C
  */
 async function sendGoodbyeDM(discordId: string, reason: string): Promise<void> {
   try {
-    const dmResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        recipient_id: discordId,
-      }),
-    });
-
-    const dmChannel: DiscordDmChannel = await dmResponse.json();
-
-    if (dmChannel.id) {
-      await fetch(`https://discord.com/api/channels/${dmChannel.id}/messages`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          content: `👋 **Thank you for being part of ${CONFIG.ORGANIZATION_NAME}!**\n\n` +
-            `Your 1-on-1 mentorship has ended: ${reason}\n\n` +
-            `We hope you've had a valuable experience and wish you the best in your artistic journey! 🎨\n\n` +
-            `You're always welcome to rejoin us in the future.\n\n` +
-            `_Questions? ${getSupportContactString()}_`
-        }),
-      });
+    const { discordApi } = await import('./discordApi.js');
+    const content = `👋 **Thank you for being part of ${CONFIG.ORGANIZATION_NAME}!**\n\n` +
+      `Your 1-on-1 mentorship has ended: ${reason}\n\n` +
+      `We hope you've had a valuable experience and wish you the best in your artistic journey! 🎨\n\n` +
+      `You're always welcome to rejoin us in the future.\n\n` +
+      `_Questions? ${getSupportContactString()}_`;
+    
+    const sent = await discordApi.sendDM(discordId, content);
+    if (sent) {
       console.log('✅ Goodbye DM sent to student');
     }
   } catch (error) {
@@ -243,37 +283,15 @@ async function sendGoodbyeDM(discordId: string, reason: string): Promise<void> {
  */
 async function notifyAdminRoleRemoval(email: string, discordId: string, reason: string): Promise<void> {
   try {
-    // Send DM to admin
-    const dmResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        recipient_id: process.env.DISCORD_ADMIN_ID,
-      }),
-    });
-
-    const dmChannel: DiscordDmChannel = await dmResponse.json();
-
-    if (dmChannel.id) {
-      await fetch(`https://discord.com/api/channels/${dmChannel.id}/messages`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          content: `🔴 **Student Removed**\n\n` +
-            `<@${discordId}> (${email})\n` +
-            `**Reason:** ${reason}\n` +
-            `**Time:** ${new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}\n\n` +
-            `The 1-on-1 Mentee role has been removed.`
-        }),
-      });
-      console.log('✅ Admin notified of role removal');
-    }
+    const { discordApi } = await import('./discordApi.js');
+    const content = `🔴 **Student Removed**\n\n` +
+      `<@${discordId}> (${email})\n` +
+      `**Reason:** ${reason}\n` +
+      `**Time:** ${new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}\n\n` +
+      `The 1-on-1 Mentee role has been removed.`;
+    
+    await discordApi.sendDM(CONFIG.DISCORD_ADMIN_ID, content);
+    console.log('✅ Admin notified of role removal');
   } catch (error) {
     console.log('Could not notify admin:', error);
   }

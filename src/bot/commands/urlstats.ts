@@ -1,6 +1,7 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, EmbedBuilder, PermissionFlagsBits, MessageFlags } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
+import { CONFIG } from '../../config/constants.js';
 
 export const data = new SlashCommandBuilder()
   .setName('urlstats')
@@ -17,7 +18,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
   try {
     // Admin-only enforcement
-    if (interaction.user.id !== process.env.DISCORD_ADMIN_ID) {
+    if (interaction.user.id !== CONFIG.DISCORD_ADMIN_ID) {
       await interaction.editReply('❌ This command is only available to administrators.');
       return;
     }
@@ -36,41 +37,34 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       return;
     }
 
-    // Get click statistics
-    const { count: totalClicks } = await supabase
-      .from('url_analytics')
-      .select('*', { count: 'exact', head: true })
-      .eq('short_code', shortCode);
-
-    // Get recent clicks
-    const { data: recentClicks } = await supabase
-      .from('url_analytics')
-      .select('clicked_at, device_type, browser')
-      .eq('short_code', shortCode)
-      .order('clicked_at', { ascending: false })
-      .limit(10);
-
-    // Get device breakdown
-    const { data: deviceBreakdown } = await supabase
-      .from('url_analytics')
-      .select('device_type')
-      .eq('short_code', shortCode);
-
-    const deviceCounts: Record<string, number> = {};
-    deviceBreakdown?.forEach(click => {
-      const device = (click as any).device_type || 'unknown';
-      deviceCounts[device] = (deviceCounts[device] || 0) + 1;
-    });
-
-    // Calculate clicks in last 7 days
+    // Fetch all analytics data in a single query (fixes N+1 issue)
+    // We'll process counts and breakdowns in memory
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     
-    const { count: recentClicksCount } = await supabase
+    const { data: allClicks, count: totalClicks } = await supabase
       .from('url_analytics')
-      .select('*', { count: 'exact', head: true })
+      .select('clicked_at, device_type, browser', { count: 'exact' })
       .eq('short_code', shortCode)
-      .gte('clicked_at', sevenDaysAgo.toISOString());
+      .order('clicked_at', { ascending: false });
+
+    // Process data in memory
+    const recentClicks = (allClicks || []).slice(0, 10); // Top 10 most recent
+    
+    const deviceCounts: Record<string, number> = {};
+    let recentClicksCount = 0;
+    
+    (allClicks || []).forEach(click => {
+      // Device breakdown
+      const device = (click as { device_type?: string }).device_type || 'unknown';
+      deviceCounts[device] = (deviceCounts[device] || 0) + 1;
+      
+      // Count recent clicks (last 7 days)
+      const clickedAt = new Date((click as { clicked_at: string }).clicked_at);
+      if (clickedAt >= sevenDaysAgo) {
+        recentClicksCount++;
+      }
+    });
 
     const baseUrl = process.env.SHORT_URL_BASE || `https://${process.env.FLY_APP_NAME || 'your-app'}.fly.dev`;
     const shortUrl = `${baseUrl}/${shortCode}`;
@@ -98,7 +92,10 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     if (recentClicks && recentClicks.length > 0) {
       const recentClicksText = recentClicks
         .slice(0, 5)
-        .map(click => `• ${new Date((click as any).clicked_at).toLocaleString()} - ${(click as any).device_type || 'unknown'} (${(click as any).browser || 'unknown'})`)
+        .map(click => {
+          const clickData = click as { clicked_at: string; device_type?: string; browser?: string };
+          return `• ${new Date(clickData.clicked_at).toLocaleString()} - ${clickData.device_type || 'unknown'} (${clickData.browser || 'unknown'})`;
+        })
         .join('\n');
       embed.addFields({ name: '🕐 Recent Clicks', value: recentClicksText || 'None', inline: false });
     }

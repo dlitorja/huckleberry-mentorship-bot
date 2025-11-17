@@ -3,6 +3,8 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
 import { getMentorshipByDiscordIds } from '../../utils/mentorship.js';
+import { validatePositiveInteger, ValidationError } from '../../utils/validation.js';
+import { handleError } from '../../utils/errors.js';
 
 export const data = new SlashCommandBuilder()
   .setName('addsessions')
@@ -16,16 +18,22 @@ export const data = new SlashCommandBuilder()
   .addIntegerOption(option =>
     option
       .setName('amount')
-      .setDescription('Number of sessions to add')
+      .setDescription('Number of sessions to add (1-100)')
       .setRequired(true)
+      .setMinValue(1)
+      .setMaxValue(100)
   );
 
 export async function execute(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const student = interaction.options.getUser('student', true);
-  const instructorDiscordId = interaction.user.id;
-  const amount = interaction.options.getInteger('amount', true);
+  try {
+    const student = interaction.options.getUser('student', true);
+    const instructorDiscordId = interaction.user.id;
+    const amountInput = interaction.options.getInteger('amount', true);
+
+    // Validate amount
+    const amount = validatePositiveInteger(amountInput, 'amount', 1, 100);
 
   // Optimized mentorship lookup
   const { data, error } = await getMentorshipByDiscordIds({
@@ -40,18 +48,29 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  const newRemaining = data.sessions_remaining + amount;
-  const newTotal = Math.max(data.total_sessions, newRemaining);
+    const newRemaining = data.sessions_remaining + amount;
+    const newTotal = Math.max(data.total_sessions, newRemaining);
 
-  const { error: updateError } = await supabase
-    .from('mentorships')
-    .update({ sessions_remaining: newRemaining, total_sessions: newTotal })
-    .eq('id', data.id);
+    const { error: updateError } = await supabase
+      .from('mentorships')
+      .update({ sessions_remaining: newRemaining, total_sessions: newTotal })
+      .eq('id', data.id);
 
-  if (updateError) {
-    await interaction.editReply(`Failed to update sessions for ${student.tag}.`);
-    return;
+    if (updateError) {
+      console.error('Failed to update sessions:', updateError);
+      await interaction.editReply(`❌ Failed to update sessions for ${student.tag}.`);
+      return;
+    }
+
+    await interaction.editReply(`✅ ${student.tag} now has ${newRemaining}/${newTotal} sessions.`);
+  } catch (error) {
+    const appError = handleError(error, 'addsessions command');
+    
+    if (appError instanceof ValidationError) {
+      await interaction.editReply(`❌ ${appError.message}`);
+    } else {
+      console.error('Unexpected error in addsessions:', appError);
+      await interaction.editReply(`❌ An unexpected error occurred: ${appError.message}`);
+    }
   }
-
-  await interaction.editReply(`${student.tag} now has ${newRemaining}/${newTotal} sessions.`);
 }

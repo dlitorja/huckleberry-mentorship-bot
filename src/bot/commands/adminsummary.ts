@@ -2,6 +2,7 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
+import { CONFIG } from '../../config/constants.js';
 
 export const data = new SlashCommandBuilder()
   .setName('adminsummary')
@@ -11,7 +12,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   // Admin check - only the configured admin can use this command
-  const ADMIN_USER_ID = process.env.DISCORD_ADMIN_ID;
+  const ADMIN_USER_ID = CONFIG.DISCORD_ADMIN_ID;
   
   if (!ADMIN_USER_ID) {
     await interaction.editReply('⚠️ Admin user ID is not configured.');
@@ -48,17 +49,19 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     total_sessions: number;
     last_session_date?: string | null;
     status: string;
-    instructors?: { discord_id?: string | null } | null;
-    mentees?: { discord_id?: string | null } | null;
+    instructors?: { discord_id?: string | null } | null | Array<{ discord_id?: string | null }>;
+    mentees?: { discord_id?: string | null } | null | Array<{ discord_id?: string | null }>;
   };
   type StudentSummary = { menteeId?: string | null; remaining: number; total: number; lastSession?: string | null };
-  const groupedByInstructor = mentorships.reduce<Record<string, StudentSummary[]>>((acc, m: MentorshipRow) => {
-    const instructorId = m.instructors?.discord_id || 'Unknown';
+  const groupedByInstructor = mentorships.reduce<Record<string, StudentSummary[]>>((acc, m) => {
+    const instructor = Array.isArray(m.instructors) ? m.instructors[0] : m.instructors;
+    const mentee = Array.isArray(m.mentees) ? m.mentees[0] : m.mentees;
+    const instructorId = instructor?.discord_id || 'Unknown';
     if (!acc[instructorId]) {
       acc[instructorId] = [];
     }
     acc[instructorId].push({
-      menteeId: m.mentees?.discord_id,
+      menteeId: mentee?.discord_id,
       remaining: m.sessions_remaining,
       total: m.total_sessions,
       lastSession: m.last_session_date
@@ -72,7 +75,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   
   for (const [instructorId, students] of Object.entries(groupedByInstructor)) {
     message += `**Instructor:** <@${instructorId}>\n`;
-    students.forEach(s => {
+    students.forEach((s: StudentSummary) => {
       const lastSession = s.lastSession 
         ? new Date(s.lastSession).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
         : 'No sessions yet';

@@ -2,6 +2,20 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, MessageFlags, EmbedBuilder } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
+import { CONFIG } from '../../config/constants.js';
+
+interface PendingJoin {
+  id: string;
+  email: string;
+  created_at: string;
+  joined_at: string | null;
+  instructors: { name: string } | null;
+}
+
+interface InstructorStats {
+  purchases: number;
+  joined: number;
+}
 
 export const data = new SlashCommandBuilder()
   .setName('dailysummary')
@@ -17,7 +31,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   // Admin check
-  const ADMIN_USER_ID = process.env.DISCORD_ADMIN_ID;
+  const ADMIN_USER_ID = CONFIG.DISCORD_ADMIN_ID;
   
   if (!ADMIN_USER_ID) {
     await interaction.editReply('⚠️ Admin user ID is not configured.');
@@ -48,13 +62,14 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   // Calculate stats
-  const totalPurchases = allPurchases?.length || 0;
-  const successfulJoins = allPurchases?.filter((p: any) => p.joined_at !== null).length || 0;
+  const purchases = (allPurchases || []) as PendingJoin[];
+  const totalPurchases = purchases.length;
+  const successfulJoins = purchases.filter((p) => p.joined_at !== null).length;
   const pendingJoins = totalPurchases - successfulJoins;
   const joinRate = totalPurchases > 0 ? Math.round((successfulJoins / totalPurchases) * 100) : 0;
 
   // Group by instructor
-  const byInstructor = allPurchases?.reduce((acc: any, join: any) => {
+  const byInstructor = purchases.reduce((acc: Record<string, InstructorStats>, join) => {
     const instructor = join.instructors?.name || 'Unknown';
     if (!acc[instructor]) {
       acc[instructor] = { purchases: 0, joined: 0 };
@@ -82,15 +97,15 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   // Add breakdown by instructor
   if (byInstructor && Object.keys(byInstructor).length > 0) {
     let instructorBreakdown = '';
-    for (const [instructor, stats] of Object.entries(byInstructor) as [string, any][]) {
+    for (const [instructor, stats] of Object.entries(byInstructor)) {
       instructorBreakdown += `**${instructor}:** ${stats.purchases} purchases, ${stats.joined} joined\n`;
     }
     embed.addFields({ name: '👨‍🏫 By Instructor', value: instructorBreakdown || 'None', inline: false });
   }
 
   // Add recent activity
-  if (allPurchases && allPurchases.length > 0) {
-    const recentActivity = allPurchases.slice(0, 5).map((join: any) => {
+  if (purchases.length > 0) {
+    const recentActivity = purchases.slice(0, 5).map((join) => {
       const status = join.joined_at ? '✅' : '⏳';
       const time = new Date(join.created_at).toLocaleString();
       return `${status} ${join.email} - ${time}`;

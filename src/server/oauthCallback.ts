@@ -3,8 +3,10 @@
 import 'dotenv/config';
 import express from 'express';
 import { supabase } from '../bot/supabaseClient.js';
-import { notifyAdminError } from '../utils/adminNotifications.js';
 import { CONFIG, getSupportContactString } from '../config/constants.js';
+import { notifyAdminError } from '../utils/adminNotifications.js';
+import { discordApi } from '../utils/discordApi.js';
+import { logger } from '../utils/logger.js';
 
 const router = express.Router();
 
@@ -39,42 +41,36 @@ router.get('/oauth/callback', async (req, res) => {
     }
 
     // Exchange code for access token
-    const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        client_id: process.env.DISCORD_CLIENT_ID!,
-        client_secret: process.env.DISCORD_CLIENT_SECRET!,
-        grant_type: 'authorization_code',
-        code: code as string,
-        redirect_uri: process.env.DISCORD_REDIRECT_URI!,
-      }),
-    });
+    const tokenData = await discordApi.exchangeCodeForToken(
+      code as string,
+      process.env.DISCORD_REDIRECT_URI!
+    );
 
-    const tokenData: { access_token?: string } = await tokenResponse.json();
-
-    if (!tokenData.access_token) {
-      console.error('Failed to get access token:', tokenData);
+    if (!tokenData || !tokenData.access_token) {
+      logger.error('Failed to get access token from Discord OAuth', undefined, { code: code as string });
       return res.status(500).send('Failed to authenticate with Discord');
     }
 
     // Get user info
-    const userResponse = await fetch('https://discord.com/api/users/@me', {
-      headers: {
-        Authorization: `Bearer ${tokenData.access_token}`,
-      },
+    const userData = await discordApi.getCurrentUser(tokenData.access_token);
+    
+    if (!userData || !userData.id || !userData.email) {
+      logger.error('Failed to get user data from Discord', undefined, { hasToken: !!tokenData.access_token });
+      return res.status(500).send('Failed to get user information from Discord');
+    }
+    // Discord username format: username (without @) - we'll store it with @ prefix for clarity
+    const discordUsername = userData.username ? `@${userData.username}` : null;
+    logger.info('User authenticated via OAuth', { 
+      email: userData.email, 
+      discordId: userData.id, 
+      username: discordUsername 
     });
-
-    const userData: { id: string; email: string } = await userResponse.json();
-    console.log('User authenticated:', userData.email, userData.id);
 
     // Use the state-validated pending join
     const pendingJoin = pendingJoinByState;
 
     if (!pendingJoin) {
-      console.error('No pending join found for state:', state);
+      logger.error('No pending join found for OAuth state', undefined, { state });
       return res.send(`
         <html>
           <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
@@ -95,57 +91,47 @@ router.get('/oauth/callback', async (req, res) => {
     const desiredRoleName = (offerRoleData as { discord_role_name?: string } | null)?.discord_role_name || '1-on-1 Mentee';
 
     // Find the desired role ID from your guild
-    const rolesResponse = await fetch(`https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/roles`, {
-      headers: {
-        Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-      },
-    });
-    const roles: Array<{ id: string; name: string }> = await rolesResponse.json();
-    const menteeRole = roles.find((r) => r.name === desiredRoleName);
+    const menteeRoleId = await discordApi.findRoleByName(desiredRoleName);
 
-    if (!menteeRole) {
-      console.error(`Could not find "${desiredRoleName}" role in guild`);
+    if (!menteeRoleId) {
+      logger.error('Could not find role in guild', undefined, { roleName: desiredRoleName });
     }
 
     // Add user to guild (if not already a member)
-    const addMemberResponse = await fetch(`https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/members/${userData.id}`, {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        access_token: tokenData.access_token,
-        roles: menteeRole ? [menteeRole.id] : []
-      }),
-    });
-
-    const addMemberResult = await addMemberResponse.text();
-    console.log('Add member result:', addMemberResponse.status, addMemberResult);
+    const memberAdded = await discordApi.addGuildMember(userData.id, tokenData.access_token);
+    
+    if (!memberAdded) {
+      logger.warn('Failed to add member to guild (may already be a member)', { 
+        userId: userData.id,
+        email: userData.email 
+      });
+    }
 
     // Assign role (works for both new and existing members)
-    if (menteeRole) {
-      const assignRoleResponse = await fetch(`https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/members/${userData.id}/roles/${menteeRole.id}`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-        },
-      });
-      console.log('Assign role result:', assignRoleResponse.status);
+    if (menteeRoleId) {
+      const roleAssigned = await discordApi.addRoleToMember(userData.id, menteeRoleId);
       
-      if (!assignRoleResponse.ok) {
-        const errorText = await assignRoleResponse.text();
-        console.error('Failed to assign role:', errorText);
+      if (!roleAssigned) {
+        logger.error('Failed to assign role to member', undefined, {
+          userId: userData.id,
+          roleId: menteeRoleId,
+          roleName: desiredRoleName,
+          email: userData.email,
+        });
         
         // Notify admin of role assignment failure
         await notifyAdminError({
           type: 'role_assignment_failed',
           message: `Failed to assign "${desiredRoleName}" role`,
-          details: errorText,
+          details: 'Discord API call failed',
           studentEmail: userData.email
         });
       } else {
-        console.log(`✅ Successfully assigned "${desiredRoleName}" role to ${userData.email}`);
+        logger.info('Successfully assigned role to member', {
+          userId: userData.id,
+          roleName: desiredRoleName,
+          email: userData.email,
+        });
       }
     }
 
@@ -185,18 +171,22 @@ router.get('/oauth/callback', async (req, res) => {
     let menteeId: string | null = null;
     if (existingMenteeByEmail?.id) {
       menteeId = existingMenteeByEmail.id;
-      if (existingMenteeByEmail.discord_id !== userData.id) {
-        await supabase
-          .from('mentees')
-          .update({ discord_id: userData.id })
-          .eq('id', menteeId);
+      // Update discord_id and discord_username if they've changed
+      const updateData: { discord_id: string; discord_username?: string | null } = { discord_id: userData.id };
+      if (discordUsername) {
+        updateData.discord_username = discordUsername;
       }
+      await supabase
+        .from('mentees')
+        .update(updateData)
+        .eq('id', menteeId);
     } else {
       const { data: newMentee } = await supabase
         .from('mentees')
         .insert({
           email: (pendingJoin.email as string).toLowerCase(),
-          discord_id: userData.id
+          discord_id: userData.id,
+          discord_username: discordUsername
         })
         .select('id')
         .single();
@@ -211,6 +201,7 @@ router.get('/oauth/callback', async (req, res) => {
         .select('id, sessions_remaining, total_sessions, status')
         .eq('mentee_id', menteeId)
         .eq('instructor_id', pendingJoin.instructor_id)
+        .eq('status', 'active') // Only check active mentorships to avoid finding old ended ones
         .maybeSingle();
 
       if (!existingMentorship) {
@@ -244,118 +235,72 @@ router.get('/oauth/callback', async (req, res) => {
 
     // Notify admin of successful join
     try {
-      const adminDmResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          recipient_id: process.env.DISCORD_ADMIN_ID,
-        }),
-      });
+      const instructorMention = instructorData?.discord_id ? `<@${instructorData.discord_id}>` : 'Unknown';
+      const adminMessage = `✅ **STUDENT JOINED SUCCESSFULLY**\n\n` +
+        `👤 **Student:** <@${userData.id}> (${userData.email})\n` +
+        `👨‍🏫 **Instructor:** ${instructorMention}\n` +
+        `📦 **Offer:** ${offerDetails?.offer_name || 'Unknown'}\n` +
+        `📊 **Sessions:** ${sessionInfo}\n` +
+        `🛒 **Purchased:** ${purchaseDate.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}\n` +
+        `✅ **Joined:** ${joinDate.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}\n` +
+        `⏱️ **Time to Join:** ${friendlyTimeToJoin}`;
       
-      const adminDmChannel: { id?: string } = await adminDmResponse.json();
-      
-      if (adminDmChannel.id) {
-        const instructorMention = instructorData?.discord_id ? `<@${instructorData.discord_id}>` : 'Unknown';
-        await fetch(`https://discord.com/api/channels/${adminDmChannel.id}/messages`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            content: `✅ **STUDENT JOINED SUCCESSFULLY**\n\n` +
-              `👤 **Student:** <@${userData.id}> (${userData.email})\n` +
-              `👨‍🏫 **Instructor:** ${instructorMention}\n` +
-              `📦 **Offer:** ${offerDetails?.offer_name || 'Unknown'}\n` +
-              `📊 **Sessions:** ${sessionInfo}\n` +
-              `🛒 **Purchased:** ${purchaseDate.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}\n` +
-              `✅ **Joined:** ${joinDate.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}\n` +
-              `⏱️ **Time to Join:** ${friendlyTimeToJoin}`
-          }),
-        });
-        console.log('✅ Admin notification sent for successful join');
+      const sent = await discordApi.sendDM(CONFIG.DISCORD_ADMIN_ID, adminMessage);
+      if (sent) {
+        logger.info('Admin notification sent for successful join', { userId: userData.id, email: userData.email });
       }
     } catch (adminNotifyError) {
-      console.log('Could not send admin notification:', adminNotifyError);
+      logger.warn('Could not send admin notification', { 
+        error: adminNotifyError instanceof Error ? adminNotifyError.message : String(adminNotifyError),
+        userId: userData.id,
+      });
     }
 
     // Send welcome DM to mentee
     try {
-      const menteeDmResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          recipient_id: userData.id,
-        }),
-      });
+      const instructorMention = instructorData?.discord_id ? `<@${instructorData.discord_id}>` : 'your instructor';
+      const welcomeMessage = `Welcome to the ${CONFIG.ORGANIZATION_NAME} Community! 🎉\n\n` +
+        `You've been assigned the "1-on-1 Mentee" role -- this is needed so you can access the mentorship voice channels!\n\n` +
+        `Your instructor is ${instructorMention}\n\n` +
+        `Please inform them of your schedule so they can check their availability -- please include your time zone, as all our instructors and students are all over the world!\n\n` +
+        `Having any issues? ${getSupportContactString()}`;
       
-      const menteeDmChannel: { id?: string } = await menteeDmResponse.json();
-      
-      if (menteeDmChannel.id) {
-        const instructorMention = instructorData?.discord_id ? `<@${instructorData.discord_id}>` : 'your instructor';
-        await fetch(`https://discord.com/api/channels/${menteeDmChannel.id}/messages`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            content: `Welcome to the ${CONFIG.ORGANIZATION_NAME} Community! 🎉\n\n` +
-              `You've been assigned the "1-on-1 Mentee" role -- this is needed so you can access the mentorship voice channels!\n\n` +
-              `Your instructor is ${instructorMention}\n\n` +
-              `Please inform them of your schedule so they can check their availability -- please include your time zone, as all our instructors and students are all over the world!\n\n` +
-              `Having any issues? ${getSupportContactString()}`
-          }),
-        });
-        console.log('✅ Welcome DM sent to mentee');
+      const sent = await discordApi.sendDM(userData.id, welcomeMessage);
+      if (sent) {
+        logger.info('Welcome DM sent to mentee', { userId: userData.id, email: userData.email });
       }
     } catch (dmError) {
-      console.log('Could not send DM to mentee:', dmError);
+      logger.warn('Could not send DM to mentee', {
+        error: dmError instanceof Error ? dmError.message : String(dmError),
+        userId: userData.id,
+      });
     }
 
     // Send notification DM to instructor
     if (instructorData?.discord_id) {
       try {
-        const instructorDmResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            recipient_id: instructorData.discord_id,
-          }),
-        });
+        const instructorMessage = `🎓 **New Mentee Alert!**\n\n` +
+          `👤 **Student:** <@${userData.id}> (${userData.email})\n` +
+          `📦 **Offer:** ${offerDetails?.offer_name || 'Unknown'}\n` +
+          `📊 **Sessions:** ${sessionInfo}\n` +
+          `🛒 **Purchased:** ${purchaseDate.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}\n` +
+          `✅ **Joined:** ${joinDate.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}\n\n` +
+          `Welcome your new student and help them schedule their first session!`;
         
-        const instructorDmChannel: { id?: string } = await instructorDmResponse.json();
-        
-        if (instructorDmChannel.id) {
-          await fetch(`https://discord.com/api/channels/${instructorDmChannel.id}/messages`, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              content: `🎓 **New Mentee Alert!**\n\n` +
-                `👤 **Student:** <@${userData.id}> (${userData.email})\n` +
-                `📦 **Offer:** ${offerDetails?.offer_name || 'Unknown'}\n` +
-                `📊 **Sessions:** ${sessionInfo}\n` +
-                `🛒 **Purchased:** ${purchaseDate.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}\n` +
-                `✅ **Joined:** ${joinDate.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}\n\n` +
-                `Welcome your new student and help them schedule their first session!`
-            }),
+        const sent = await discordApi.sendDM(instructorData.discord_id, instructorMessage);
+        if (sent) {
+          logger.info('Notification DM sent to instructor', {
+            instructorId: instructorData.discord_id,
+            userId: userData.id,
+            email: userData.email,
           });
-          console.log('✅ Notification DM sent to instructor');
         }
       } catch (instructorDmError) {
-        console.log('Could not send DM to instructor:', instructorDmError);
+        logger.warn('Could not send DM to instructor', {
+          error: instructorDmError instanceof Error ? instructorDmError.message : String(instructorDmError),
+          instructorId: instructorData.discord_id,
+          userId: userData.id,
+        });
       }
     }
 
@@ -377,7 +322,9 @@ router.get('/oauth/callback', async (req, res) => {
     `);
 
   } catch (error) {
-    console.error('OAuth callback error:', error);
+    logger.error('OAuth callback error', error instanceof Error ? error : new Error(String(error)), {
+      state: typeof state === 'string' ? state : undefined,
+    });
     res.status(500).send('An error occurred during authentication');
   }
 });

@@ -1,6 +1,7 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, PermissionFlagsBits, MessageFlags } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
+import { CONFIG } from '../../config/constants.js';
 
 export const data = new SlashCommandBuilder()
   .setName('shortenurl')
@@ -34,7 +35,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
   try {
     // Admin-only enforcement
-    if (interaction.user.id !== process.env.DISCORD_ADMIN_ID) {
+    if (interaction.user.id !== CONFIG.DISCORD_ADMIN_ID) {
       await interaction.editReply('❌ This command is only available to administrators.');
       return;
     }

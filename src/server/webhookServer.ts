@@ -10,6 +10,11 @@ import { notifyAdminPurchase, notifyAdminError } from '../utils/adminNotificatio
 import { CONFIG, getSupportContactString } from '../config/constants.js';
 import { removeStudentRole } from '../utils/roleManagement.js';
 import { logClick } from '../utils/urlShortener.js';
+import { createWebhookVerificationMiddleware } from '../utils/webhookSecurity.js';
+import { atomicallyUpsertMentorship, atomicallyIncrementMentorshipSessions, checkAndMarkWebhookProcessed } from '../utils/databaseTransactions.js';
+import { discordApi } from '../utils/discordApi.js';
+import { logger } from '../utils/logger.js';
+import { validateEmail } from '../utils/validation.js';
 import crypto from 'crypto';
 
 const app = express();
@@ -21,15 +26,160 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Middleware
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Preserve raw body for webhook signature verification
+app.use(express.json({ verify: (req: any, res, buf) => { req.rawBody = buf; } }));
+app.use(express.urlencoded({ extended: true, verify: (req: any, res, buf) => { req.rawBody = buf; } }));
+
+// Webhook signature verification middleware
+const verifyWebhook = createWebhookVerificationMiddleware('WEBHOOK_SECRET');
+
+// Webhook rate limiting to prevent DoS
+type WebhookRateEntry = { count: number; resetAt: number };
+const webhookRateMap: Map<string, WebhookRateEntry> = new Map();
+const WEBHOOK_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const WEBHOOK_RATE_LIMIT_MAX = parseInt(process.env.WEBHOOK_RATE_LIMIT_MAX || '30', 10); // per IP per minute
+
+function checkWebhookRateLimit(ip: string | null): boolean {
+  if (!ip) return true; // Allow if IP cannot be determined
+  const now = Date.now();
+  const entry = webhookRateMap.get(ip);
+  if (!entry || entry.resetAt <= now) {
+    webhookRateMap.set(ip, { count: 1, resetAt: now + WEBHOOK_RATE_LIMIT_WINDOW_MS });
+    return true;
+  }
+  if (entry.count < WEBHOOK_RATE_LIMIT_MAX) {
+    entry.count += 1;
+    return true;
+  }
+  return false;
+}
+
+// Cleanup expired webhook rate limit entries
+function cleanupWebhookRateMap() {
+  const now = Date.now();
+  let cleaned = 0;
+  for (const [ip, entry] of webhookRateMap.entries()) {
+    if (entry.resetAt <= now) {
+      webhookRateMap.delete(ip);
+      cleaned++;
+    }
+  }
+  if (cleaned > 0) {
+    logger.debug('Cleaned up expired webhook rate limit entries', { cleaned });
+  }
+}
+
+// Run cleanup every 5 minutes
+const webhookRateMapCleanupInterval = setInterval(cleanupWebhookRateMap, 5 * 60 * 1000);
+
+// Webhook rate limiting middleware
+function webhookRateLimitMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const clientIp =
+    (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+    (req.socket?.remoteAddress ?? null);
+
+  if (!checkWebhookRateLimit(clientIp)) {
+    logger.warn('Webhook rate limit exceeded', { ip: clientIp, path: req.path });
+    return res.status(429).json({
+      error: 'Too Many Requests',
+      message: 'Rate limit exceeded. Please try again later.',
+    });
+  }
+  next();
+}
 
 // Routes
 app.use(oauthCallback);
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Webhook server is running' });
+// Health check endpoint with comprehensive service verification
+app.get('/health', async (req, res) => {
+  const healthStatus: {
+    status: 'healthy' | 'degraded' | 'unhealthy';
+    timestamp: string;
+    services: {
+      server: { status: 'ok' | 'error'; message?: string };
+      database: { status: 'ok' | 'error'; message?: string; latency?: number };
+      discord: { status: 'ok' | 'error'; message?: string; latency?: number };
+      supabase: { status: 'ok' | 'error'; message?: string; latency?: number };
+    };
+  } = {
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    services: {
+      server: { status: 'ok' },
+      database: { status: 'error', message: 'Not checked' },
+      discord: { status: 'error', message: 'Not checked' },
+      supabase: { status: 'error', message: 'Not checked' },
+    },
+  };
+
+  // Check database connectivity (Supabase)
+  try {
+    const dbStart = Date.now();
+    const { error: dbError } = await supabase
+      .from('instructors')
+      .select('id')
+      .limit(1);
+    const dbLatency = Date.now() - dbStart;
+    
+    if (dbError) {
+      healthStatus.services.supabase = {
+        status: 'error',
+        message: dbError.message,
+        latency: dbLatency,
+      };
+      healthStatus.status = 'unhealthy';
+    } else {
+      healthStatus.services.supabase = {
+        status: 'ok',
+        latency: dbLatency,
+      };
+    }
+  } catch (error) {
+    healthStatus.services.supabase = {
+      status: 'error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+    healthStatus.status = 'unhealthy';
+  }
+
+  // Check Discord API connectivity
+  try {
+    const discordStart = Date.now();
+    const response = await fetch('https://discord.com/api/v10/gateway/bot', {
+      headers: {
+        Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+      },
+      signal: AbortSignal.timeout(5000), // 5 second timeout
+    });
+    const discordLatency = Date.now() - discordStart;
+    
+    if (!response.ok) {
+      healthStatus.services.discord = {
+        status: 'error',
+        message: `HTTP ${response.status}`,
+        latency: discordLatency,
+      };
+      healthStatus.status = healthStatus.status === 'healthy' ? 'degraded' : 'unhealthy';
+    } else {
+      healthStatus.services.discord = {
+        status: 'ok',
+        latency: discordLatency,
+      };
+    }
+  } catch (error) {
+    healthStatus.services.discord = {
+      status: 'error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    };
+    healthStatus.status = healthStatus.status === 'healthy' ? 'degraded' : 'unhealthy';
+  }
+
+  // Database and Supabase are the same (Supabase), so mark database as same status
+  healthStatus.services.database = { ...healthStatus.services.supabase };
+
+  const statusCode = healthStatus.status === 'healthy' ? 200 : healthStatus.status === 'degraded' ? 200 : 503;
+  res.status(statusCode).json(healthStatus);
 });
 
 // -------------------------------
@@ -39,17 +189,11 @@ async function readdMenteeRoleIfWasEnded(discordUserId: string): Promise<boolean
   try {
     const roleId = await getMenteeRoleId();
     if (!roleId) return false;
-    await fetch(
-      `https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/members/${discordUserId}/roles/${roleId}`,
-      {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-        },
-      }
-    );
-    return true;
-  } catch {
+    return await discordApi.addRoleToMember(discordUserId, roleId);
+  } catch (error) {
+    logger.error('Failed to re-add mentee role', error instanceof Error ? error : new Error(String(error)), {
+      discordUserId,
+    });
     return false;
   }
 }
@@ -74,64 +218,41 @@ async function notifyReturningStudentAndInstructor(params: {
   await Promise.allSettled([
     (async () => {
       try {
-        const studentDmResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ recipient_id: studentDiscordId }),
+        const studentMessage = `🎉 **Payment Processed Successfully!**\n\n` +
+          `Thank you for continuing your **1-on-1 mentorship** with **${instructorName}**!\n\n` +
+          `✅ **${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new 1-on-1 sessions** have been added to your account.\n` +
+          `💬 Reach out to your instructor to schedule your next 1-on-1 session.\n\n` +
+          `We're excited to continue your personalized mentorship journey!\n\n` +
+          `_Having any issues? ${getSupportContactString()}_`;
+        
+        await discordApi.sendDM(studentDiscordId, studentMessage);
+      } catch (error) {
+        // Log DM failures but don't fail the webhook - notifications are non-critical
+        logger.error('Failed to send student renewal DM', error instanceof Error ? error : new Error(String(error)), {
+          studentDiscordId,
+          email,
         });
-        const studentDmChannel: { id?: string } = await studentDmResponse.json();
-        if (studentDmChannel.id) {
-          await fetch(`https://discord.com/api/channels/${studentDmChannel.id}/messages`, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              content: `🎉 **Payment Processed Successfully!**\n\n` +
-                `Thank you for continuing your **1-on-1 mentorship** with **${instructorName}**!\n\n` +
-                `✅ **${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new 1-on-1 sessions** have been added to your account.\n` +
-                `💬 Reach out to your instructor to schedule your next 1-on-1 session.\n\n` +
-                `We're excited to continue your personalized mentorship journey!\n\n` +
-                `_Having any issues? ${getSupportContactString()}_`
-            }),
-          });
-        }
-      } catch {}
+      }
     })(),
     (async () => {
       if (instructorDiscordData?.discord_id) {
         try {
-          const instructorDmResponse = await fetch(`https://discord.com/api/users/@me/channels`, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ recipient_id: instructorDiscordData.discord_id }),
+          const instructorMessage = `🔄 **Returning Student Renewed**\n\n` +
+            `<@${studentDiscordId}> (${email}) has renewed their **1-on-1 mentorship**!\n\n` +
+            `✅ **${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new 1-on-1 sessions** added to their account.\n` +
+            `📊 **Total Sessions:** ${sessionTotal}\n` +
+            `🛒 **Purchased:** ${purchaseTime}\n\n` +
+            `They're ready to schedule their next 1-on-1 session!`;
+          
+          await discordApi.sendDM(instructorDiscordData.discord_id, instructorMessage);
+        } catch (error) {
+          // Log DM failures but don't fail the webhook - notifications are non-critical
+          logger.error('Failed to send instructor renewal DM', error instanceof Error ? error : new Error(String(error)), {
+            instructorDiscordId: instructorDiscordData.discord_id,
+            studentDiscordId,
+            email,
           });
-          const instructorDmChannel: { id?: string } = await instructorDmResponse.json();
-          if (instructorDmChannel.id) {
-            await fetch(`https://discord.com/api/channels/${instructorDmChannel.id}/messages`, {
-              method: 'POST',
-              headers: {
-                Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                content: `🔄 **Returning Student Renewed**\n\n` +
-                  `<@${studentDiscordId}> (${email}) has renewed their **1-on-1 mentorship**!\n\n` +
-                  `✅ **${CONFIG.DEFAULT_SESSIONS_PER_PURCHASE} new 1-on-1 sessions** added to their account.\n` +
-                  `📊 **Total Sessions:** ${sessionTotal}\n` +
-                  `🛒 **Purchased:** ${purchaseTime}\n\n` +
-                  `They're ready to schedule their next 1-on-1 session!`
-              }),
-            });
-          }
-        } catch {}
+        }
       }
     })(),
   ]);
@@ -218,66 +339,70 @@ async function handleReturningStudentRenewal(params: {
 }): Promise<{ message: string }> {
   const { email, instructorId, instructorName, existingMentee, sessionsToAdd } = params;
 
-  const { data: mentorship, error: mentorshipError } = await supabase
+  // Use atomic upsert to prevent race conditions
+  const result = await atomicallyUpsertMentorship({
+    menteeId: existingMentee.id,
+    instructorId,
+    sessionsToAdd,
+  });
+
+  if (!result.success) {
+    throw new Error(`Failed to update mentorship: ${result.error}`);
+  }
+
+  // Fetch mentorship status in the same query to avoid race condition
+  // Use the mentorshipId from the atomic operation result if available
+  const mentorshipId = result.mentorshipId;
+  if (!mentorshipId) {
+    throw new Error('Mentorship ID not returned from atomic operation');
+  }
+
+  const { data: mentorship } = await supabase
     .from('mentorships')
-    .select('id, sessions_remaining, total_sessions, status, returned_after_end')
-    .eq('mentee_id', existingMentee.id)
-    .eq('instructor_id', instructorId)
-    .maybeSingle();
+    .select('id, sessions_remaining, total_sessions, status')
+    .eq('id', mentorshipId)
+    .single();
 
-  if (mentorshipError || !mentorship) {
-    await supabase
-      .from('mentorships')
-      .insert({
-        mentee_id: existingMentee.id,
-        instructor_id: instructorId,
-        sessions_remaining: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE,
-        total_sessions: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE,
-        status: 'active'
+  if (!mentorship) {
+    throw new Error('Mentorship not found after atomic upsert');
+  }
+
+  // Check if mentorship was ended and needs role re-added
+  // Note: The atomic function should have set status to 'active', but check anyway
+  if (mentorship.status === 'ended') {
+    const roleReadded = await readdMenteeRoleIfWasEnded(existingMentee.discord_id);
+    if (!roleReadded) {
+      // Log error and notify admin - this is critical for student access
+      console.error(`Failed to re-add mentee role for ${existingMentee.discord_id} after renewal`);
+      await notifyAdminError({
+        type: 'role_assignment_failed',
+        message: `Failed to re-add Discord role after student renewal`,
+        details: { discordId: existingMentee.discord_id, email, mentorshipId: mentorship.id },
+        studentEmail: email,
+        studentDiscordId: existingMentee.discord_id,
       });
-  } else {
-    const newSessionsRemaining = mentorship.sessions_remaining + sessionsToAdd;
-    const newTotalSessions = Math.max(mentorship.total_sessions, newSessionsRemaining);
-    const wasEnded = mentorship.status === 'ended';
-
-    await supabase
-      .from('mentorships')
-      .update({
-        sessions_remaining: newSessionsRemaining,
-        total_sessions: newTotalSessions,
-        status: 'active',
-        ended_at: null,
-        end_reason: null,
-        returned_after_end: wasEnded ? true : mentorship.returned_after_end
-      })
-      .eq('id', mentorship.id);
-
-    if (wasEnded) {
-      await readdMenteeRoleIfWasEnded(existingMentee.discord_id).catch(() => {});
     }
   }
 
-  const { data: updatedMentorship } = await supabase
-    .from('mentorships')
-    .select('sessions_remaining, total_sessions')
-    .eq('mentee_id', existingMentee.id)
-    .eq('instructor_id', instructorId)
-    .single();
-
-  const sessionTotal = updatedMentorship
-    ? `${updatedMentorship.sessions_remaining}/${updatedMentorship.total_sessions}`
+  const sessionTotal = mentorship
+    ? `${mentorship.sessions_remaining}/${mentorship.total_sessions}`
     : 'N/A';
 
   const purchaseTime = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
 
-  await notifyReturningStudentAndInstructor({
-    studentDiscordId: existingMentee.discord_id,
-    email,
-    instructorName,
-    instructorId,
-    sessionTotal,
-    purchaseTime,
-  }).catch(() => {});
+  try {
+    await notifyReturningStudentAndInstructor({
+      studentDiscordId: existingMentee.discord_id,
+      email,
+      instructorName,
+      instructorId,
+      sessionTotal,
+      purchaseTime,
+    });
+  } catch (notificationError) {
+    // Log but don't fail the webhook - notifications are non-critical
+    console.error('Failed to send renewal notifications:', notificationError);
+  }
 
   return { message: 'Returning student - sessions added' };
 }
@@ -293,8 +418,9 @@ async function handleNewStudentPurchase(params: {
   transactionId?: string | number | null;
   currency?: string | null;
   sessionsPerPurchase: number;
+  discordRoleName?: string | null;
 }): Promise<{ emailId?: string }> {
-  const { email, instructorId, instructorName, offerIdString, offerName, offerPrice, menteeName, transactionId, currency, sessionsPerPurchase } = params;
+  const { email, instructorId, instructorName, offerIdString, offerName, offerPrice, menteeName, transactionId, currency, sessionsPerPurchase, discordRoleName } = params;
 
   const oauthState = crypto.randomBytes(16).toString('hex');
   const oauthStateExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
@@ -354,124 +480,60 @@ async function handleNewStudentPurchase(params: {
     console.error('[webhook] Exception during mentee upsert:', e);
   }
 
-  // 2) Ensure mentorship exists and is additive for renewals
-  if (menteeId) {
-    try {
-      const { data: existingMentorship } = await supabase
-        .from('mentorships')
-        .select('id, sessions_remaining, total_sessions, status, returned_after_end, mentee_role_name')
-        .eq('mentee_id', menteeId)
-        .eq('instructor_id', instructorId)
-        .maybeSingle();
-
-      const addSessions = sessionsPerPurchase;
-      const roleNameForMentee = ((offerData as { discord_role_name?: string } | null)?.discord_role_name) || '1-on-1 Mentee';
-
-      if (!existingMentorship) {
-        const { error: createMentorshipError } = await supabase
-          .from('mentorships')
-          .insert({
-            mentee_id: menteeId,
-            instructor_id: instructorId,
-            sessions_remaining: addSessions,
-            total_sessions: addSessions,
-            status: 'active',
-            mentee_role_name: roleNameForMentee
+      // 2) Ensure mentorship exists and is additive for renewals (atomic operation)
+      if (menteeId) {
+        try {
+          const roleNameForMentee = discordRoleName || '1-on-1 Mentee';
+          
+          // Use atomic upsert to prevent race conditions
+          const mentorshipResult = await atomicallyUpsertMentorship({
+            menteeId,
+            instructorId,
+            sessionsToAdd: sessionsPerPurchase,
+            roleName: roleNameForMentee,
           });
-        if (createMentorshipError) {
-          // If another webhook already created it (duplicate delivery), convert to additive update
-          if ((createMentorshipError as any).code === '23505') {
-            console.warn('[webhook] Mentorship already exists; incrementing sessions instead');
-            const { data: current } = await supabase
-              .from('mentorships')
-              .select('id, sessions_remaining, total_sessions, status, returned_after_end')
-              .eq('mentee_id', menteeId)
-              .eq('instructor_id', instructorId)
-              .maybeSingle();
 
-            if (current) {
-              const wasEnded = current.status === 'ended';
-              const newRemaining = (current.sessions_remaining ?? 0) + addSessions;
-              const newTotal = Math.max(current.total_sessions ?? addSessions, newRemaining);
-
-              const { error: updateAfterConflictError } = await supabase
-                .from('mentorships')
-                .update({
-                  sessions_remaining: newRemaining,
-                  total_sessions: newTotal,
-                  status: 'active',
-                  ended_at: null,
-                  end_reason: null,
-                  returned_after_end: wasEnded ? true : current.returned_after_end
-                })
-                .eq('id', current.id);
-
-              if (updateAfterConflictError) {
-                console.error('[webhook] Failed to update mentorship after conflict:', updateAfterConflictError);
-              } else {
-                console.log('[webhook] Updated mentorship after conflict for', email.toLowerCase(), 'newRemaining', newRemaining, 'newTotal', newTotal);
-              }
-            } else {
-              console.error('[webhook] Conflict reported but mentorship not found on subsequent select');
-            }
+          if (!mentorshipResult.success) {
+            console.error('[webhook] Failed to upsert mentorship:', mentorshipResult.error);
+            await notifyAdminError({
+              type: 'database_error',
+              message: 'Failed to create or update mentorship during purchase webhook',
+              details: mentorshipResult.error,
+              studentEmail: email,
+            });
           } else {
-            console.error('[webhook] Failed to create mentorship:', createMentorshipError);
+            console.log('[webhook] Successfully upserted mentorship for', email.toLowerCase(), 'sessions', sessionsPerPurchase);
           }
-        } else {
-          console.log('[webhook] Created mentorship for', email.toLowerCase(), 'instructor', instructorId, 'sessions', addSessions);
-        }
-      } else {
-        const wasEnded = existingMentorship.status === 'ended';
-        const newRemaining = (existingMentorship.sessions_remaining ?? 0) + addSessions;
-        const newTotal = Math.max(existingMentorship.total_sessions ?? addSessions, newRemaining);
-
-        const { error: updateMentorshipError } = await supabase
-          .from('mentorships')
-          .update({
-            sessions_remaining: newRemaining,
-            total_sessions: newTotal,
-            status: 'active',
-            ended_at: null,
-            end_reason: null,
-            returned_after_end: wasEnded ? true : existingMentorship.returned_after_end,
-            mentee_role_name: existingMentorship.mentee_role_name || roleNameForMentee
-          })
-          .eq('id', existingMentorship.id);
-        if (updateMentorshipError) {
-          console.error('[webhook] Failed to update mentorship for renewal:', updateMentorshipError);
-        } else {
-          console.log('[webhook] Updated mentorship for', email.toLowerCase(), 'newRemaining', newRemaining, 'newTotal', newTotal, 'wasEnded', wasEnded);
+        } catch (e) {
+          await notifyAdminError({
+            type: 'database_error',
+            message: 'Failed to create or update mentorship during purchase webhook',
+            details: e,
+            studentEmail: email,
+          });
+          console.error('[webhook] Exception during mentorship ensure:', e);
         }
       }
-    } catch (e) {
-      await notifyAdminError({
-        type: 'database_error',
-        message: 'Failed to create or update mentorship during purchase webhook',
-        details: e,
-        studentEmail: email,
-      });
-      console.error('[webhook] Exception during mentorship ensure:', e);
-    }
-  }
 
-  // 3) Record purchase (idempotent on transaction_id if available)
-  try {
-    await supabase
-      .from('purchases')
-      .upsert(
-        {
+  // 3) Record purchase (only if transaction_id was null, since it was already inserted atomically if it existed)
+  // The purchase record is created atomically in checkAndMarkWebhookProcessed when transaction_id exists
+  // If transaction_id is null, we can't deduplicate, so insert it here
+  if (!transactionId) {
+    try {
+      await supabase
+        .from('purchases')
+        .insert({
           email: email.toLowerCase(),
           instructor_id: instructorId,
           offer_id: offerIdString,
-          transaction_id: transactionId ? String(transactionId) : null,
+          transaction_id: null,
           amount_paid_decimal: offerPrice != null ? Number(offerPrice) : null,
           currency: currency ?? null,
           purchased_at: new Date().toISOString(),
-        },
-        { onConflict: 'transaction_id' }
-      );
-  } catch (e) {
-    console.error('[webhook] Failed to record purchase:', e);
+        });
+    } catch (e) {
+      console.error('[webhook] Failed to record purchase (no transaction_id):', e);
+    }
   }
 
   const inviteLink = `https://discord.com/api/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.DISCORD_REDIRECT_URI!)}&response_type=code&scope=identify%20email%20guilds.join&state=${encodeURIComponent(oauthState)}`;
@@ -487,23 +549,47 @@ async function handleNewStudentPurchase(params: {
   return { emailId };
 }
 
-// Kajabi webhook endpoint
-app.post('/webhook/kajabi', async (req, res) => {
+// Kajabi webhook endpoint (with signature verification and rate limiting)
+app.post('/webhook/kajabi', webhookRateLimitMiddleware, verifyWebhook, async (req, res) => {
   try {
-    console.log('Received Kajabi webhook:', JSON.stringify(req.body, null, 2));
+    logger.info('Received Kajabi webhook', { 
+      hasBody: !!req.body,
+      bodyKeys: req.body ? Object.keys(req.body) : [],
+    });
 
     // Extract data from Kajabi's nested structure
     // Supports both general webhooks (member.email, offer.id) and offer-specific webhooks (payload.member_email, payload.offer_id)
-    const email = req.body.member?.email || req.body.payload?.member_email || req.body.email;
-    const offer_id = req.body.offer?.id || req.body.payload?.offer_id || req.body.offer_id;
+    const rawEmail = req.body.member?.email || req.body.payload?.member_email || req.body.email;
+    const rawOfferId = req.body.offer?.id || req.body.payload?.offer_id || req.body.offer_id;
 
-    if (!email || !offer_id || offer_id === 0) {
-      console.error('Missing email or offer_id. Email:', email, 'Offer ID:', offer_id);
-      return res.status(400).json({ error: 'Missing required fields: email, offer_id' });
+    // Validate and sanitize input to prevent SQL injection
+    let email: string;
+    let offerIdString: string;
+    
+    try {
+      email = validateEmail(rawEmail, 'email');
+    } catch (validationError) {
+      logger.warn('Invalid email in webhook payload', { 
+        rawEmail: typeof rawEmail === 'string' ? rawEmail.substring(0, 50) : rawEmail,
+        error: validationError instanceof Error ? validationError.message : String(validationError),
+      });
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    // Validate offer_id - must be a number or numeric string
+    if (!rawOfferId || rawOfferId === 0) {
+      logger.warn('Missing or invalid offer_id in webhook payload', { rawOfferId });
+      return res.status(400).json({ error: 'Missing or invalid offer_id' });
     }
     
-    // Convert offer_id to string for consistency
-    const offerIdString = String(offer_id);
+    // Convert offer_id to string and validate it's numeric
+    const offerIdNum = typeof rawOfferId === 'number' ? rawOfferId : parseInt(String(rawOfferId), 10);
+    if (isNaN(offerIdNum) || offerIdNum <= 0) {
+      logger.warn('Invalid offer_id format in webhook payload', { rawOfferId });
+      return res.status(400).json({ error: 'Invalid offer_id format' });
+    }
+    
+    offerIdString = String(offerIdNum);
 
     // Lookup the instructor for this offer
     const { data: offerData, error: offerError } = await supabase
@@ -540,6 +626,26 @@ app.post('/webhook/kajabi', async (req, res) => {
 
     // Sessions per purchase: honor offer override, else default
     const sessionsPerPurchase = Number((offerData as { sessions_per_purchase?: number } | null)?.sessions_per_purchase) || CONFIG.DEFAULT_SESSIONS_PER_PURCHASE;
+
+    // Atomically deduplicate webhook processing using transaction_id
+    // This inserts the purchase record immediately, eliminating race conditions
+    const { shouldProcess, alreadyProcessed } = await checkAndMarkWebhookProcessed(
+      transactionId,
+      email,
+      offerIdString,
+      offerData.instructor_id,
+      offerPrice,
+      currency
+    );
+
+    if (!shouldProcess) {
+      console.log(`Webhook already processed for transaction ${transactionId}, skipping`);
+      return res.json({
+        success: true,
+        message: 'Webhook already processed (deduplicated)',
+        duplicate: true,
+      });
+    }
 
     // Check if this is a returning/existing student
     const { data: existingMentee } = await supabase
@@ -585,6 +691,7 @@ app.post('/webhook/kajabi', async (req, res) => {
         currency,
         sessionsPerPurchase,
         menteeName,
+        discordRoleName: ((offerData as { discord_role_name?: string } | null)?.discord_role_name) || null,
       });
 
       return res.json({
@@ -617,23 +724,33 @@ app.post('/webhook/kajabi', async (req, res) => {
   }
 });
 
-// Kajabi cancellation/refund webhook endpoint
-app.post('/webhook/kajabi/cancellation', async (req, res) => {
+// Kajabi cancellation/refund webhook endpoint (with signature verification and rate limiting)
+app.post('/webhook/kajabi/cancellation', webhookRateLimitMiddleware, verifyWebhook, async (req, res) => {
   try {
-    console.log('Received Kajabi cancellation webhook:', JSON.stringify(req.body, null, 2));
+    logger.info('Received Kajabi cancellation webhook', { 
+      hasBody: !!req.body,
+      bodyKeys: req.body ? Object.keys(req.body) : [],
+    });
 
     // Extract email from various possible Kajabi webhook formats
-    const email = req.body.member?.email || 
-                  req.body.payload?.member_email || 
-                  req.body.email ||
-                  req.body.subscription?.member?.email;
+    const rawEmail = req.body.member?.email || 
+                     req.body.payload?.member_email || 
+                     req.body.email ||
+                     req.body.subscription?.member?.email;
     
     // Extract event type
     const eventType = req.body.event_type || req.body.type || 'unknown';
 
-    if (!email) {
-      console.error('Missing email in cancellation webhook');
-      return res.status(400).json({ error: 'Missing required field: email' });
+    // Validate and sanitize email input
+    let email: string;
+    try {
+      email = validateEmail(rawEmail, 'email');
+    } catch (validationError) {
+      logger.warn('Invalid email in cancellation webhook payload', { 
+        rawEmail: typeof rawEmail === 'string' ? rawEmail.substring(0, 50) : rawEmail,
+        error: validationError instanceof Error ? validationError.message : String(validationError),
+      });
+      return res.status(400).json({ error: 'Invalid email format' });
     }
 
     console.log(`Processing cancellation for: ${email}, Event: ${eventType}`);
@@ -675,7 +792,10 @@ app.post('/webhook/kajabi/cancellation', async (req, res) => {
       if (activeMentorship?.mentee_role_name) {
         menteeRoleName = activeMentorship.mentee_role_name;
       }
-    } catch {}
+    } catch (error) {
+      // Log but continue - we have a default role name
+      console.warn('Failed to fetch mentee role name, using default:', error);
+    }
 
     // Remove student role
     const result = await removeStudentRole({
@@ -747,6 +867,26 @@ function checkRateLimit(ip: string | null): boolean {
   }
   return false;
 }
+
+// Cleanup expired entries from redirectRateMap to prevent memory leak
+function cleanupRedirectRateMap() {
+  const now = Date.now();
+  let cleaned = 0;
+  for (const [ip, entry] of redirectRateMap.entries()) {
+    if (entry.resetAt <= now) {
+      redirectRateMap.delete(ip);
+      cleaned++;
+    }
+  }
+  if (cleaned > 0) {
+    // Using console.log here to avoid circular dependency with logger
+    // This is a low-frequency cleanup operation
+    console.log(`[rate-limit] Cleaned up ${cleaned} expired rate limit entries`);
+  }
+}
+
+// Run cleanup every 30 minutes
+const redirectRateMapCleanupInterval = setInterval(cleanupRedirectRateMap, 30 * 60 * 1000);
 
 app.get('/:shortCode', async (req, res) => {
   const { shortCode } = req.params;
@@ -891,22 +1031,13 @@ let cachedMenteeRoleId: string | null = null;
 async function getMenteeRoleId(): Promise<string | null> {
   if (cachedMenteeRoleId) return cachedMenteeRoleId;
   try {
-    const rolesResponse = await fetch(
-      `https://discord.com/api/guilds/${process.env.DISCORD_GUILD_ID}/roles`,
-      {
-        headers: {
-          Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-        },
-      }
-    );
-    const roles: Array<{ id?: string; name?: string }> = await rolesResponse.json();
-    const menteeRole = roles.find(r => r && r.name === '1-on-1 Mentee');
-    if (menteeRole?.id) {
-      cachedMenteeRoleId = menteeRole.id;
+    const roleId = await discordApi.findRoleByName('1-on-1 Mentee');
+    if (roleId) {
+      cachedMenteeRoleId = roleId;
       return cachedMenteeRoleId;
     }
   } catch (err) {
-    console.error('Failed to fetch Discord roles for mentee role cache:', err);
+    logger.error('Failed to fetch Discord role for mentee role cache', err instanceof Error ? err : new Error(String(err)));
   }
   return null;
 }
@@ -915,10 +1046,17 @@ async function getMenteeRoleId(): Promise<string | null> {
 // Graceful shutdown
 // -------------------------------
 function shutdown(signal: string) {
-  console.log(`${signal} received. Shutting down webhook server gracefully...`);
+  logger.info(`${signal} received. Shutting down webhook server gracefully...`);
   try {
     clearInterval(retentionInterval);
-  } catch {}
+    clearInterval(redirectRateMapCleanupInterval);
+    clearInterval(webhookRateMapCleanupInterval);
+  } catch (error) {
+    // Ignore errors during shutdown cleanup
+    logger.warn('Error clearing intervals during shutdown', { 
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 
   server.close((err?: Error) => {
     if (err) {
