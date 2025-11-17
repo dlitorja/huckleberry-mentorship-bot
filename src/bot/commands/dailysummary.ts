@@ -3,6 +3,9 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, MessageFlags, EmbedBuilder } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
 import { CONFIG } from '../../config/constants.js';
+import { executeWithErrorHandling } from '../../utils/commandErrorHandler.js';
+import { measurePerformance } from '../../utils/performance.js';
+import { validatePositiveInteger } from '../../utils/validation.js';
 
 interface PendingJoin {
   id: string;
@@ -27,7 +30,7 @@ export const data = new SlashCommandBuilder()
       .setRequired(false)
   );
 
-export async function execute(interaction: ChatInputCommandInteraction) {
+async function executeCommand(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   // Admin check
@@ -43,23 +46,29 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  const days = interaction.options.getInteger('days') || 1;
+  const daysInput = interaction.options.getInteger('days') || 1;
+  const days = validatePositiveInteger(daysInput, 'days', 1, 365);
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
   const startDateStr = startDate.toISOString();
 
-  // Get purchases in the time period
-  const { data: allPurchases, error: purchaseError } = await supabase
-    .from('pending_joins')
-    .select('id, email, created_at, joined_at, instructors(name)')
-    .gte('created_at', startDateStr)
-    .order('created_at', { ascending: false });
+  // Get purchases in the time period with performance monitoring
+  const allPurchases = await measurePerformance(
+    'dailysummary.fetch_purchases',
+    async () => {
+      const { data, error } = await supabase
+        .from('pending_joins')
+        .select('id, email, created_at, joined_at, instructors(name)')
+        .gte('created_at', startDateStr)
+        .order('created_at', { ascending: false });
 
-  if (purchaseError) {
-    console.error('Error fetching purchases:', purchaseError);
-    await interaction.editReply('Failed to fetch purchase data.');
-    return;
-  }
+      if (error) {
+        throw new Error(`Failed to fetch purchase data: ${error.message}`);
+      }
+      return (data || []) as PendingJoin[];
+    },
+    { days, startDate: startDateStr }
+  );
 
   // Calculate stats
   const purchases = (allPurchases || []) as PendingJoin[];
@@ -119,5 +128,11 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   await interaction.editReply({ embeds: [embed] });
+}
+
+export async function execute(interaction: ChatInputCommandInteraction) {
+  await executeWithErrorHandling(interaction, executeCommand, {
+    commandName: 'dailysummary',
+  });
 }
 

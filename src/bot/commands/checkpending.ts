@@ -3,12 +3,14 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, MessageFlags, EmbedBuilder } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
 import { CONFIG } from '../../config/constants.js';
+import { executeWithErrorHandling } from '../../utils/commandErrorHandler.js';
+import { measurePerformance } from '../../utils/performance.js';
 
 export const data = new SlashCommandBuilder()
   .setName('checkpending')
   .setDescription('Admin only: Check students who purchased but haven\'t joined Discord yet');
 
-export async function execute(interaction: ChatInputCommandInteraction) {
+async function executeCommand(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   // Admin check
@@ -24,18 +26,22 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  // Fetch pending joins
-  const { data: pendingJoins, error } = await supabase
-    .from('pending_joins')
-    .select('email, created_at, instructor_id, discord_user_id, joined_at, instructors(name)')
-    .is('joined_at', null)
-    .order('created_at', { ascending: false });
+  // Fetch pending joins with performance monitoring
+  const pendingJoins = await measurePerformance(
+    'checkpending.fetch_pending',
+    async () => {
+      const { data, error } = await supabase
+        .from('pending_joins')
+        .select('email, created_at, instructor_id, discord_user_id, joined_at, instructors(name)')
+        .is('joined_at', null)
+        .order('created_at', { ascending: false });
 
-  if (error) {
-    console.error('Error fetching pending joins:', error);
-    await interaction.editReply('Failed to fetch pending joins.');
-    return;
-  }
+      if (error) {
+        throw new Error(`Failed to fetch pending joins: ${error.message}`);
+      }
+      return data || [];
+    }
+  );
 
   if (!pendingJoins || pendingJoins.length === 0) {
     await interaction.editReply('✅ No pending joins! All students have joined Discord.');
@@ -79,5 +85,11 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   await interaction.editReply({ embeds: [embed] });
+}
+
+export async function execute(interaction: ChatInputCommandInteraction) {
+  await executeWithErrorHandling(interaction, executeCommand, {
+    commandName: 'checkpending',
+  });
 }
 

@@ -3,12 +3,14 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
 import { CONFIG } from '../../config/constants.js';
+import { executeWithErrorHandling } from '../../utils/commandErrorHandler.js';
+import { measurePerformance } from '../../utils/performance.js';
 
 export const data = new SlashCommandBuilder()
   .setName('adminsummary')
   .setDescription('Admin only: View all mentorships and session counts');
 
-export async function execute(interaction: ChatInputCommandInteraction) {
+async function executeCommand(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
   // Admin check - only the configured admin can use this command
@@ -24,19 +26,23 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  // Fetch all mentorships with instructor and mentee details
+  // Fetch all mentorships with instructor and mentee details with performance monitoring
   // Only show active mentorships (exclude ended ones)
-  const { data: mentorships, error } = await supabase
-    .from('mentorships')
-    .select('sessions_remaining, total_sessions, last_session_date, status, instructors(discord_id), mentees(discord_id)')
-    .eq('status', 'active')
-    .order('instructors(discord_id)');
+  const mentorships = await measurePerformance(
+    'adminsummary.fetch_mentorships',
+    async () => {
+      const { data, error } = await supabase
+        .from('mentorships')
+        .select('sessions_remaining, total_sessions, last_session_date, status, instructors(discord_id), mentees(discord_id)')
+        .eq('status', 'active')
+        .order('instructors(discord_id)');
 
-  if (error) {
-    console.error('Admin summary error:', error);
-    await interaction.editReply('Failed to fetch mentorship data.');
-    return;
-  }
+      if (error) {
+        throw new Error(`Failed to fetch mentorship data: ${error.message}`);
+      }
+      return data || [];
+    }
+  );
 
   if (!mentorships || mentorships.length === 0) {
     await interaction.editReply('No mentorships found in the database.');
@@ -100,5 +106,11 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   } else {
     await interaction.editReply(message);
   }
+}
+
+export async function execute(interaction: ChatInputCommandInteraction) {
+  await executeWithErrorHandling(interaction, executeCommand, {
+    commandName: 'adminsummary',
+  });
 }
 
