@@ -363,8 +363,9 @@ export default function InstructorDashboardPage() {
         {allAvailableMentorships.length > 0 && (
           <Combobox
             value={selectedStudent || ""}
-            onValueChange={(value: string) => {
-              setSelectedStudent(value || null);
+            onValueChange={(value: string | string[]) => {
+              const stringValue = Array.isArray(value) ? value[0] || "" : value;
+              setSelectedStudent(stringValue || null);
               setSearchQuery(""); // Clear search when selected
             }}
           >
