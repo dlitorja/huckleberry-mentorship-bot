@@ -1,8 +1,15 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import type { Session } from "next-auth";
 import { ImageUploader } from "@/components/ImageUploader";
 import { ImageGallery } from "@/components/ImageGallery";
+
+// Extended Session type with role property
+type ExtendedSession = Session & {
+  role?: "student" | "instructor" | "admin" | "unknown";
+  discordId?: string;
+};
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -29,7 +36,7 @@ export default function SessionDetailPage(props: Props) {
   const [images, setImages] = useState<ImageItem[]>([]);
   const [loading, setLoading] = useState(true);
   
-  const userRole = authSession?.role || "unknown";
+  const userRole = (authSession as ExtendedSession | null)?.role || "unknown";
   const isAdmin = userRole === "admin";
 
   useEffect(() => {
