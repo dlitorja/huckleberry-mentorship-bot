@@ -11,7 +11,7 @@
     "webhook": "tsx src/server/webhookServer.ts",
     "webhook:prod": "node dist/server/webhookServer.js",
     "start:all": "tsx src/start.ts",
-    "start:all:prod": "pm2 start ecosystem.config.js",
+    "start:all:prod": "node dist/start.prod.js",
     "stop:all": "pm2 stop ecosystem.config.js",
     "restart:all": "pm2 restart ecosystem.config.js",
     "push:all": "git push origin main && git push gitlab main",

@@ -32,9 +32,6 @@ RUN npm ci --only=production
 # Copy built files from builder stage
 COPY --from=builder /app/dist ./dist
 
-# Copy other necessary files
-COPY ecosystem.config.js ./
-
 # Expose port for webhook server
 EXPOSE 3000
 
