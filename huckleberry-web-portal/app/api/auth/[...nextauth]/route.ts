@@ -10,6 +10,10 @@ const handler = NextAuth({
     })
   ],
   secret: process.env.NEXTAUTH_SECRET,
+  // Explicitly set the base path
+  basePath: "/api/auth",
+  // Set the URL if provided, otherwise NextAuth will try to detect it
+  ...(process.env.NEXTAUTH_URL && { url: process.env.NEXTAUTH_URL }),
   callbacks: {
     async jwt({ token, account, profile }) {
       // On first sign-in, add discord id and role
@@ -26,6 +30,12 @@ const handler = NextAuth({
       session.role = token.role;
       return session;
     }
+  },
+  // Better error handling
+  debug: process.env.NODE_ENV === "development",
+  pages: {
+    signIn: "/login",
+    error: "/login"
   }
 });
 

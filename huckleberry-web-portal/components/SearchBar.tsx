@@ -208,7 +208,7 @@ export function SearchBar({ className }: { className?: string }) {
                 </div>
               ) : (
                 <div className="p-4 text-center text-gray-500 dark:text-neutral-400">
-                  No results found for "{query}"
+                  No results found for &quot;{query}&quot;
                 </div>
               )
             ) : null}

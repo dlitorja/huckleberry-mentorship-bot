@@ -105,7 +105,7 @@ export default async function DashboardPage() {
         <div className="p-4 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20">
           <div className="font-medium text-amber-900 dark:text-amber-200">No active mentorship</div>
           <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
-            You don't have an active mentorship yet. Contact support if you believe this is an error.
+            You don&apos;t have an active mentorship yet. Contact support if you believe this is an error.
           </p>
         </div>
       )}

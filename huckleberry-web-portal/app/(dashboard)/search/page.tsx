@@ -92,7 +92,7 @@ export default function SearchResultsPage() {
         <h1 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Search Results</h1>
         {(query || dateFrom || dateTo || tags.length > 0) && (
           <div className="text-sm text-gray-600 dark:text-neutral-400">
-            {query && <span>Query: "{query}"</span>}
+            {query && <span>Query: &quot;{query}&quot;</span>}
             {dateFrom && <span>{query ? " • " : ""}From: {dateFrom}</span>}
             {dateTo && <span> • To: {dateTo}</span>}
             {tags.length > 0 && <span> • Tags: {tags.join(", ")}</span>}
