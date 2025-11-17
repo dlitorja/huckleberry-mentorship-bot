@@ -54,15 +54,40 @@ const nextConfig = {
     
     // Ensure @ alias points to project root
     // This is a direct fallback if the plugin doesn't work
+    // Use a function to handle the alias resolution more explicitly
+    const existingAlias = config.resolve.alias;
     config.resolve.alias = {
-      ...config.resolve.alias,
+      ...existingAlias,
       '@': projectRoot,
     };
+    
+    // Also ensure projectRoot is in modules for resolution
+    if (!config.resolve.modules) {
+      config.resolve.modules = [];
+    }
+    if (Array.isArray(config.resolve.modules)) {
+      if (!config.resolve.modules.includes(projectRoot)) {
+        config.resolve.modules.unshift(projectRoot);
+      }
+    }
+    
+    // Ensure extensions are set up correctly
+    if (!config.resolve.extensions) {
+      config.resolve.extensions = [];
+    }
+    const extensions = ['.tsx', '.ts', '.jsx', '.js', '.json'];
+    for (const ext of extensions) {
+      if (!config.resolve.extensions.includes(ext)) {
+        config.resolve.extensions.push(ext);
+      }
+    }
     
     // Debug: Log the configuration (will appear in CI logs)
     console.log('[Next.js Config] Project root:', projectRoot);
     console.log('[Next.js Config] @ alias:', config.resolve.alias['@']);
     console.log('[Next.js Config] Resolve plugins count:', config.resolve.plugins.length);
+    console.log('[Next.js Config] Modules:', config.resolve.modules);
+    console.log('[Next.js Config] Extensions:', config.resolve.extensions);
     
     return config;
   },
