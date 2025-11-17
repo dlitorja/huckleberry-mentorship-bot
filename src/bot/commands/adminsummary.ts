@@ -26,14 +26,21 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     return;
   }
 
-  // Fetch all mentorships with instructor and mentee details with performance monitoring
+  // Fetch all mentorships with instructor and mentee details in a single query
   // Only show active mentorships (exclude ended ones)
   const mentorships = await measurePerformance(
     'adminsummary.fetch_mentorships',
     async () => {
       const { data, error } = await supabase
         .from('mentorships')
-        .select('sessions_remaining, total_sessions, last_session_date, status, instructors(discord_id), mentees(discord_id)')
+        .select(`
+          sessions_remaining,
+          total_sessions,
+          last_session_date,
+          status,
+          instructors!mentorships_instructor_id_fkey(discord_id),
+          mentees!mentorships_mentee_id_fkey(discord_id)
+        `)
         .eq('status', 'active')
         .order('instructors(discord_id)');
 

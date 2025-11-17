@@ -2,6 +2,7 @@
 // Utilities for atomic database operations to prevent race conditions
 
 import { supabase } from '../bot/supabaseClient.js';
+import { logger } from './logger.js';
 
 /**
  * Atomically increment sessions_remaining for a mentorship
@@ -19,7 +20,10 @@ export async function atomicallyIncrementMentorshipSessions(
     });
 
     if (error) {
-      console.error('Atomic increment failed:', error);
+      logger.error('Atomic increment failed', error instanceof Error ? error : new Error(String(error)), {
+        mentorshipId,
+        sessionsToAdd,
+      });
       return { success: false, error };
     }
 
@@ -32,7 +36,10 @@ export async function atomicallyIncrementMentorshipSessions(
       newSessionsRemaining: data[0].new_sessions_remaining,
     };
   } catch (error) {
-    console.error('Exception in atomicallyIncrementMentorshipSessions:', error);
+    logger.error('Exception in atomicallyIncrementMentorshipSessions', error instanceof Error ? error : new Error(String(error)), {
+      mentorshipId,
+      sessionsToAdd,
+    });
     return { success: false, error };
   }
 }
@@ -59,7 +66,11 @@ export async function atomicallyUpsertMentorship(params: {
     });
 
     if (error) {
-      console.error('Atomic upsert failed:', error);
+      logger.error('Atomic upsert failed', error instanceof Error ? error : new Error(String(error)), {
+        menteeId,
+        instructorId,
+        sessionsToAdd,
+      });
       return { success: false, error };
     }
 
@@ -72,7 +83,11 @@ export async function atomicallyUpsertMentorship(params: {
       mentorshipId: data[0].mentorship_id,
     };
   } catch (error) {
-    console.error('Exception in atomicallyUpsertMentorship:', error);
+    logger.error('Exception in atomicallyUpsertMentorship', error instanceof Error ? error : new Error(String(error)), {
+      menteeId,
+      instructorId,
+      sessionsToAdd,
+    });
     return { success: false, error };
   }
 }
@@ -143,12 +158,15 @@ export async function checkAndMarkWebhookProcessed(
       
       if (isUniqueViolation) {
         // Unique constraint violation - purchase already exists, webhook was already processed
-        console.log(`Webhook already processed (duplicate transaction_id: ${transactionIdString})`);
+        logger.debug('Webhook already processed (duplicate transaction_id)', { transactionId: transactionIdString });
         return { shouldProcess: false, alreadyProcessed: true };
       }
       
       // Other database error - log and process to avoid missing legitimate webhooks
-      console.error('Error in atomic webhook deduplication insert:', insertError);
+      logger.error('Error in atomic webhook deduplication insert', insertError instanceof Error ? insertError : new Error(String(insertError)), {
+        transactionId: transactionIdString,
+        email,
+      });
       return { shouldProcess: true, alreadyProcessed: false };
     }
 
@@ -158,10 +176,15 @@ export async function checkAndMarkWebhookProcessed(
     }
 
     // Insert returned no data but no error - this shouldn't happen, but process it
-    console.warn('Atomic insert returned no data but no error for transaction:', transactionIdString);
+    logger.warn('Atomic insert returned no data but no error for transaction', {
+      transactionId: transactionIdString,
+    });
     return { shouldProcess: true, alreadyProcessed: false };
   } catch (error) {
-    console.error('Exception in atomic webhook deduplication:', error);
+    logger.error('Exception in atomic webhook deduplication', error instanceof Error ? error : new Error(String(error)), {
+      transactionId: String(transactionId),
+      email,
+    });
     // On error, process it to avoid missing legitimate webhooks
     return { shouldProcess: true, alreadyProcessed: false };
   }

@@ -64,7 +64,8 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       });
 
       if (error) {
-        throw new Error(`Mentorship lookup failed: ${error.message}`);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        throw new Error(`Mentorship lookup failed: ${errorMessage}`);
       }
 
       if (!data) {

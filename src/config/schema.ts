@@ -20,7 +20,7 @@ export const envSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
 
   // Webhook Configuration
-  WEBHOOK_PORT: z.string().regex(/^\d+$/).transform(Number).default('3000'),
+  WEBHOOK_PORT: z.string().regex(/^\d+$/).default('3000').transform(Number),
   WEBHOOK_SECRET: z.string().optional(),
 
   // Email Configuration (Resend)
@@ -35,14 +35,14 @@ export const envSchema = z.object({
   ADMIN_EMAIL: z.string().email('ADMIN_EMAIL must be a valid email').default('admin@example.com'),
 
   // Session Configuration
-  DEFAULT_SESSIONS_PER_PURCHASE: z.string().regex(/^\d+$/).transform(Number).default('4'),
+  DEFAULT_SESSIONS_PER_PURCHASE: z.string().regex(/^\d+$/).default('4').transform(Number),
 
   // Optional Configuration
   SHORT_URL_BASE: z.string().url().optional(),
   FLY_APP_NAME: z.string().optional(),
-  ANALYTICS_RETENTION_DAYS: z.string().regex(/^\d+$/).transform(Number).default('180'),
-  REDIRECT_RATE_LIMIT_MAX: z.string().regex(/^\d+$/).transform(Number).default('200'),
-  REQUIRE_WEBHOOK_VERIFICATION: z.string().transform((val) => val === 'true').default('false'),
+  ANALYTICS_RETENTION_DAYS: z.string().regex(/^\d+$/).default('180').transform(Number),
+  REDIRECT_RATE_LIMIT_MAX: z.string().regex(/^\d+$/).default('200').transform(Number),
+  REQUIRE_WEBHOOK_VERIFICATION: z.string().default('false').transform((val) => val === 'true'),
   DEFAULT_MENTEE_ROLE_NAME: z.string().default('1-on-1 Mentee'),
 });
 
@@ -59,7 +59,7 @@ export function validateEnv(): Env {
     return envSchema.parse(process.env);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      const missingVars = error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join('\n');
+      const missingVars = error.issues.map((e: z.ZodIssue) => `${e.path.join('.')}: ${e.message}`).join('\n');
       throw new Error(`Environment variable validation failed:\n${missingVars}`);
     }
     throw error;

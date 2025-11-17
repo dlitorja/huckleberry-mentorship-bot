@@ -77,7 +77,10 @@ export default function SessionDetailPage(props: Props) {
       </div>
       {session?.notes && (
         <div className="p-4 rounded-md border border-gray-200 dark:border-neutral-900 bg-white dark:bg-neutral-950">
-          <p className="whitespace-pre-wrap text-gray-900 dark:text-white">{session.notes}</p>
+          <div 
+            className="prose prose-sm dark:prose-invert max-w-none text-gray-900 dark:text-white"
+            dangerouslySetInnerHTML={{ __html: session.notes }}
+          />
         </div>
       )}
       {session?.mentorship_id && (

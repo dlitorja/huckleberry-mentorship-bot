@@ -149,7 +149,10 @@ export async function removeStudentRole(options: RemoveStudentOptions): Promise<
     const { error: updateError, data: updatedMentorships } = await mentorshipQuery.select('id');
 
     if (updateError) {
-      console.error('Failed to update mentorship status:', updateError);
+      logger.error('Failed to update mentorship status', updateError instanceof Error ? updateError : new Error(String(updateError)), {
+        menteeId: menteeData.id,
+        reason,
+      });
       return {
         success: false,
         message: 'Failed to update mentorship status',
@@ -174,7 +177,9 @@ export async function removeStudentRole(options: RemoveStudentOptions): Promise<
 
       if (!roleRemoved) {
         // Log warning but don't fail - DB update succeeded
-        console.warn(`Failed to remove Discord role for ${menteeDiscordId} - mentorship still marked as ended in database`);
+        logger.warn('Failed to remove Discord role - mentorship still marked as ended in database', {
+          discordId: menteeDiscordId,
+        });
         // Notify admin about the Discord role removal failure
         if (notifyAdmin) {
           await notifyAdminError({
@@ -193,7 +198,10 @@ export async function removeStudentRole(options: RemoveStudentOptions): Promise<
       }
     } else {
       // Still has active mentorships, don't remove role
-      console.log(`Not removing Discord role - student still has ${activeMentorshipsAfter.length} active mentorship(s)`);
+      logger.debug('Not removing Discord role - student still has active mentorships', {
+        discordId: menteeDiscordId,
+        activeMentorshipsCount: activeMentorshipsAfter.length,
+      });
     }
 
     // Send goodbye DM (optional)
@@ -212,7 +220,10 @@ export async function removeStudentRole(options: RemoveStudentOptions): Promise<
     };
 
   } catch (error) {
-    console.error('Error removing student role:', error);
+    logger.error('Error removing student role', error instanceof Error ? error : new Error(String(error)), {
+      menteeDiscordId,
+      reason,
+    });
     
     if (notifyAdmin) {
       await notifyAdminError({
@@ -242,19 +253,19 @@ async function removeDiscordRole(discordId: string, roleName: string, client?: C
       const member = await guild.members.fetch(discordId).catch(() => null);
       
       if (!member) {
-        console.log('Member not found in guild (may have left)');
+        logger.debug('Member not found in guild (may have left)', { discordId });
         return false;
       }
 
       const menteeRole = guild.roles.cache.find(role => role.name === roleName);
       
       if (!menteeRole) {
-        console.error(`${roleName} role not found in server`);
+        logger.error(`${roleName} role not found in server`, new Error('Role not found'), { discordId, roleName });
         return false;
       }
 
       await member.roles.remove(menteeRole);
-      console.log(`✅ Removed ${roleName} role from ${discordId}`);
+      logger.info(`Removed ${roleName} role from member`, { discordId, roleName });
       return true;
     } else {
       // Use Discord API directly (for webhook contexts)
@@ -269,14 +280,14 @@ async function removeDiscordRole(discordId: string, roleName: string, client?: C
       );
 
       if (!response.ok) {
-        console.log('Member not found in guild (may have left)');
+        logger.debug('Member not found in guild (may have left)', { discordId });
         return false;
       }
 
       // Ensure role ID is cached/fetched once
       const roleId = await getRoleIdByName(roleName);
       if (!roleId) {
-        console.error(`${roleName} role not found in server`);
+        logger.error(`${roleName} role not found in server`, new Error('Role not found'), { discordId, roleName });
         return false;
       }
 
@@ -289,7 +300,10 @@ async function removeDiscordRole(discordId: string, roleName: string, client?: C
       return false;
     }
   } catch (error) {
-    console.error('Error removing Discord role:', error);
+    logger.error('Error removing Discord role', error instanceof Error ? error : new Error(String(error)), {
+      discordId,
+      roleName,
+    });
     return false;
   }
 }
@@ -308,10 +322,13 @@ async function sendGoodbyeDM(discordId: string, reason: string): Promise<void> {
     
     const sent = await discordApi.sendDM(discordId, content);
     if (sent) {
-      console.log('✅ Goodbye DM sent to student');
+      logger.info('Goodbye DM sent to student', { discordId });
     }
   } catch (error) {
-    console.log('Could not send goodbye DM:', error);
+    logger.warn('Could not send goodbye DM', {
+      discordId,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
@@ -328,9 +345,13 @@ async function notifyAdminRoleRemoval(email: string, discordId: string, reason: 
       `The 1-on-1 Mentee role has been removed.`;
     
     await discordApi.sendDM(CONFIG.DISCORD_ADMIN_ID, content);
-    console.log('✅ Admin notified of role removal');
+    logger.info('Admin notified of role removal', { email, discordId, reason });
   } catch (error) {
-    console.log('Could not notify admin:', error);
+    logger.warn('Could not notify admin', {
+      email,
+      discordId,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 

@@ -38,6 +38,11 @@ export default async function DashboardLayout({ children }: { children: ReactNod
               Instructor
             </Link>
           )}
+          {role === "admin" && (
+            <Link href="/assets" className="text-gray-700 dark:text-neutral-300 hover:text-gray-900 dark:hover:text-white hover:underline transition-colors">
+              Image Assets
+            </Link>
+          )}
         </nav>
         <div className="mt-4 pt-4 border-t border-gray-200 dark:border-neutral-800">
           <SignOutButton />

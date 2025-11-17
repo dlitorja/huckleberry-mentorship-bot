@@ -4,6 +4,7 @@
 import { Resend } from 'resend';
 
 import { CONFIG } from '../config/constants.js';
+import { logger } from './logger.js';
 
 const ADMIN_ID = CONFIG.DISCORD_ADMIN_ID;
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -39,7 +40,7 @@ interface FailedJoinAlert {
  */
 async function sendAdminDM(content: string): Promise<boolean> {
   if (!ADMIN_ID) {
-    console.error('Missing DISCORD_ADMIN_ID');
+    logger.error('Missing DISCORD_ADMIN_ID', new Error('DISCORD_ADMIN_ID not configured'));
     return false;
   }
 
@@ -48,11 +49,13 @@ async function sendAdminDM(content: string): Promise<boolean> {
     const { discordApi } = await import('./discordApi.js');
     const sent = await discordApi.sendDM(ADMIN_ID, content);
     if (sent) {
-      console.log('✅ Admin notification sent');
+      logger.debug('Admin notification sent', { adminId: ADMIN_ID });
     }
     return sent;
   } catch (error) {
-    console.error('Error sending admin DM:', error);
+    logger.error('Error sending admin DM', error instanceof Error ? error : new Error(String(error)), {
+      adminId: ADMIN_ID,
+    });
     return false;
   }
 }
@@ -105,24 +108,38 @@ ${info.offerPrice ? `💰 **Price:** $${info.offerPrice}` : ''}
     });
 
     if (error) {
-      console.error('Failed to send admin purchase notification email:', error);
+      logger.error('Failed to send admin purchase notification email', error instanceof Error ? error : new Error(String(error)), {
+        studentEmail: info.studentEmail,
+        instructorName: info.instructorName,
+      });
     } else {
-      console.log('✅ Admin purchase notification email sent:', data?.id);
+      logger.info('Admin purchase notification email sent', {
+        emailId: data?.id,
+        studentEmail: info.studentEmail,
+      });
     }
   } catch (error) {
-    console.error('Error sending admin purchase notification email:', error);
+    logger.error('Error sending admin purchase notification email', error instanceof Error ? error : new Error(String(error)), {
+      studentEmail: info.studentEmail,
+    });
   }
 
   // Always send Discord DM (regardless of email success/failure)
   try {
     const dmSent = await sendAdminDM(dmMessage);
     if (dmSent) {
-      console.log('✅ Admin purchase notification Discord DM sent');
+      logger.debug('Admin purchase notification Discord DM sent', {
+        studentEmail: info.studentEmail,
+      });
     } else {
-      console.error('⚠️ Failed to send admin purchase notification Discord DM');
+      logger.warn('Failed to send admin purchase notification Discord DM', {
+        studentEmail: info.studentEmail,
+      });
     }
   } catch (error) {
-    console.error('Error sending admin purchase notification Discord DM:', error);
+    logger.error('Error sending admin purchase notification Discord DM', error instanceof Error ? error : new Error(String(error)), {
+      studentEmail: info.studentEmail,
+    });
   }
 }
 

@@ -1,6 +1,8 @@
 // src/utils/errors.ts
 // Custom error classes for consistent error handling
 
+import { logger } from './logger.js';
+
 /**
  * Base error class for application errors
  */
@@ -80,7 +82,7 @@ export function handleError(error: unknown, context?: string): AppError {
   }
 
   if (error instanceof Error) {
-    console.error(`Error${context ? ` in ${context}` : ''}:`, error);
+    logger.error(`Error${context ? ` in ${context}` : ''}`, error, { context });
     return new AppError(
       error.message,
       'UNKNOWN_ERROR',
@@ -90,7 +92,7 @@ export function handleError(error: unknown, context?: string): AppError {
   }
 
   const errorMessage = String(error);
-  console.error(`Unknown error${context ? ` in ${context}` : ''}:`, errorMessage);
+  logger.error(`Unknown error${context ? ` in ${context}` : ''}`, new Error(errorMessage), { context });
   return new AppError(
     errorMessage,
     'UNKNOWN_ERROR',

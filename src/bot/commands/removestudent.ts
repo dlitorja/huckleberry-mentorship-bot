@@ -38,9 +38,10 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   // Verify admin permission
   const adminId = CONFIG.DISCORD_ADMIN_ID;
   if (interaction.user.id !== adminId) {
-    return await interaction.editReply({
+    await interaction.editReply({
       content: '❌ This command is only available to administrators.'
     });
+    return;
   }
 
   // Get command options
@@ -80,6 +81,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       reason,
     });
   }
+  return;
 }
 
 export async function execute(interaction: ChatInputCommandInteraction) {

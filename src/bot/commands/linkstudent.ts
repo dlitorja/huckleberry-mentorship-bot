@@ -52,13 +52,16 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
   const discordUser = interaction.options.getUser('discorduser', true);
 
-  // Find pending join by email with performance monitoring
+  // Find pending join by email with instructor data in a single query
   const pendingJoin = await measurePerformance(
     'linkstudent.find_pending_join',
     async () => {
       const { data, error } = await supabase
         .from('pending_joins')
-        .select('*, instructors(discord_id, name)')
+        .select(`
+          *,
+          instructors!pending_joins_instructor_id_fkey(discord_id, name)
+        `)
         .eq('email', email)
         .is('discord_user_id', null)
         .order('created_at', { ascending: false })
@@ -150,15 +153,24 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       measurePerformance(
         'linkstudent.create_mentorship',
         async () => {
-          const { data: existingMentee } = await supabase
+          // Check for existing mentee and mentorship in a single query
+          const { data: existingMentee, error: menteeError } = await supabase
             .from('mentees')
-            .select('id')
+            .select(`
+              id,
+              mentorships!mentees_mentee_id_fkey(id)
+            `)
             .eq('discord_id', discordUser.id)
-            .single();
+            .eq('mentorships.instructor_id', pendingJoin.instructor_id)
+            .maybeSingle();
+
+          if (menteeError && menteeError.code !== 'PGRST116') { // PGRST116 = no rows returned
+            throw new Error(`Failed to check existing mentee: ${menteeError.message}`);
+          }
 
           if (!existingMentee) {
             // Create mentee record
-            const { data: newMentee, error: menteeError } = await supabase
+            const { data: newMentee, error: createMenteeError } = await supabase
               .from('mentees')
               .insert({
                 discord_id: discordUser.id,
@@ -167,31 +179,42 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
               .select('id')
               .single();
 
-            if (!menteeError && newMentee) {
-              // Check if mentorship exists
-              const { data: existingMentorship } = await supabase
-                .from('mentorships')
-                .select('id')
-                .eq('mentee_id', newMentee.id)
-                .eq('instructor_id', pendingJoin.instructor_id)
-                .single();
+            if (createMenteeError || !newMentee) {
+              throw new Error(`Failed to create mentee: ${createMenteeError?.message || 'Unknown error'}`);
+            }
 
-              if (!existingMentorship) {
-                // Create mentorship record with default sessions
-                await supabase
-                  .from('mentorships')
-                  .insert({
-                    mentee_id: newMentee.id,
-                    instructor_id: pendingJoin.instructor_id,
-                    sessions_remaining: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE,
-                    total_sessions: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE
-                  });
-                
-                logger.info('Created mentorship record for manually linked student', {
-                  menteeId: newMentee.id,
-                  instructorId: pendingJoin.instructor_id,
+            // Create mentorship record with default sessions
+            await supabase
+              .from('mentorships')
+              .insert({
+                mentee_id: newMentee.id,
+                instructor_id: pendingJoin.instructor_id,
+                sessions_remaining: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE,
+                total_sessions: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE
+              });
+            
+            logger.info('Created mentorship record for manually linked student', {
+              menteeId: newMentee.id,
+              instructorId: pendingJoin.instructor_id,
+            });
+          } else {
+            // Mentee exists, check if mentorship exists
+            const existingMentorships = (existingMentee as any).mentorships || [];
+            if (existingMentorships.length === 0) {
+              // Create mentorship record with default sessions
+              await supabase
+                .from('mentorships')
+                .insert({
+                  mentee_id: existingMentee.id,
+                  instructor_id: pendingJoin.instructor_id,
+                  sessions_remaining: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE,
+                  total_sessions: CONFIG.DEFAULT_SESSIONS_PER_PURCHASE
                 });
-              }
+              
+              logger.info('Created mentorship record for existing mentee', {
+                menteeId: existingMentee.id,
+                instructorId: pendingJoin.instructor_id,
+              });
             }
           }
         },
@@ -209,7 +232,13 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       `💬 Welcome DM: Sent\n\n` +
       `The student is now fully set up!`
     );
-
+  } catch (error) {
+    logger.error('Error in linkstudent command', error instanceof Error ? error : new Error(String(error)), {
+      email,
+      discordUserId: discordUser.id,
+    });
+    await interaction.editReply('❌ An error occurred while linking the student. Please check the logs.');
+  }
 }
 
 export async function execute(interaction: ChatInputCommandInteraction) {

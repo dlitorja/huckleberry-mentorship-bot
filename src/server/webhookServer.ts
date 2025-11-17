@@ -16,6 +16,7 @@ import { discordApi } from '../utils/discordApi.js';
 import { logger } from '../utils/logger.js';
 import { validateEmail, validateName, validateNumeric, validateCurrency, validateTransactionId } from '../utils/validation.js';
 import { measurePerformance } from '../utils/performance.js';
+import { checkRateLimit as checkDatabaseRateLimit, cleanupExpiredRateLimits } from '../utils/rateLimiter.js';
 import crypto from 'crypto';
 
 const app = express();
@@ -374,7 +375,10 @@ async function handleReturningStudentRenewal(params: {
     const roleReadded = await readdMenteeRoleIfWasEnded(existingMentee.discord_id);
     if (!roleReadded) {
       // Log error and notify admin - this is critical for student access
-      console.error(`Failed to re-add mentee role for ${existingMentee.discord_id} after renewal`);
+      logger.error('Failed to re-add mentee role after renewal', new Error('Role re-addition failed'), {
+        discordId: existingMentee.discord_id,
+        email,
+      });
       await notifyAdminError({
         type: 'role_assignment_failed',
         message: `Failed to re-add Discord role after student renewal`,
@@ -402,7 +406,10 @@ async function handleReturningStudentRenewal(params: {
     });
   } catch (notificationError) {
     // Log but don't fail the webhook - notifications are non-critical
-    console.error('Failed to send renewal notifications:', notificationError);
+    logger.error('Failed to send renewal notifications', notificationError instanceof Error ? notificationError : new Error(String(notificationError)), {
+      email,
+      instructorId,
+    });
   }
 
   return { message: 'Returning student - sessions added' };
@@ -453,7 +460,7 @@ async function handleNewStudentPurchase(params: {
 
     if (existingMentee?.id) {
       menteeId = existingMentee.id;
-      console.log('[webhook] Found existing mentee by email:', email.toLowerCase(), 'id=', menteeId);
+      logger.debug('Found existing mentee by email', { email: email.toLowerCase(), menteeId });
     } else {
       const { data: newMentee, error: insertMenteeError } = await supabase
         .from('mentees')
@@ -466,9 +473,11 @@ async function handleNewStudentPurchase(params: {
         .single();
       menteeId = newMentee?.id ?? null;
       if (insertMenteeError) {
-        console.error('[webhook] Failed to insert mentee:', insertMenteeError);
+        logger.error('Failed to insert mentee', insertMenteeError instanceof Error ? insertMenteeError : new Error(String(insertMenteeError)), {
+          email: email.toLowerCase(),
+        });
       } else {
-        console.log('[webhook] Inserted new mentee:', email.toLowerCase(), 'id=', menteeId);
+        logger.info('Inserted new mentee', { email: email.toLowerCase(), menteeId });
       }
     }
   } catch (e) {
@@ -495,7 +504,11 @@ async function handleNewStudentPurchase(params: {
           });
 
           if (!mentorshipResult.success) {
-            console.error('[webhook] Failed to upsert mentorship:', mentorshipResult.error);
+            logger.error('Failed to upsert mentorship', mentorshipResult.error instanceof Error ? mentorshipResult.error : new Error(String(mentorshipResult.error)), {
+              email: email.toLowerCase(),
+              instructorId,
+              sessionsPerPurchase,
+            });
             await notifyAdminError({
               type: 'database_error',
               message: 'Failed to create or update mentorship during purchase webhook',
@@ -503,7 +516,11 @@ async function handleNewStudentPurchase(params: {
               studentEmail: email,
             });
           } else {
-            console.log('[webhook] Successfully upserted mentorship for', email.toLowerCase(), 'sessions', sessionsPerPurchase);
+            logger.info('Successfully upserted mentorship', {
+              email: email.toLowerCase(),
+              instructorId,
+              sessionsPerPurchase,
+            });
           }
         } catch (e) {
           await notifyAdminError({
@@ -512,7 +529,10 @@ async function handleNewStudentPurchase(params: {
             details: e,
             studentEmail: email,
           });
-          console.error('[webhook] Exception during mentorship ensure:', e);
+          logger.error('Exception during mentorship ensure', e instanceof Error ? e : new Error(String(e)), {
+            email: email.toLowerCase(),
+            instructorId,
+          });
         }
       }
 
@@ -533,7 +553,10 @@ async function handleNewStudentPurchase(params: {
           purchased_at: new Date().toISOString(),
         });
     } catch (e) {
-      console.error('[webhook] Failed to record purchase (no transaction_id):', e);
+      logger.error('Failed to record purchase (no transaction_id)', e instanceof Error ? e : new Error(String(e)), {
+        email: email.toLowerCase(),
+        offerId: offerIdString,
+      });
     }
   }
 
@@ -979,57 +1002,47 @@ export default app;
 // -------------------------------
 // URL Shortener: Redirect handler
 // -------------------------------
-// Simple in-memory IP rate limiter for redirect endpoint
-type RateEntry = { count: number; resetAt: number };
-const redirectRateMap: Map<string, RateEntry> = new Map();
+// Database-backed IP rate limiter for redirect endpoint (works across multiple instances)
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const RATE_LIMIT_MAX = parseInt(process.env.REDIRECT_RATE_LIMIT_MAX || '200', 10); // per IP per window
 
-function checkRateLimit(ip: string | null): boolean {
-  if (!ip) return true;
-  const now = Date.now();
-  const entry = redirectRateMap.get(ip);
-  if (!entry || entry.resetAt <= now) {
-    redirectRateMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return true;
-  }
-  if (entry.count < RATE_LIMIT_MAX) {
-    entry.count += 1;
-    return true;
-  }
-  return false;
-}
-
-// Cleanup expired entries from redirectRateMap to prevent memory leak
-function cleanupRedirectRateMap() {
-  const now = Date.now();
-  let cleaned = 0;
-  for (const [ip, entry] of redirectRateMap.entries()) {
-    if (entry.resetAt <= now) {
-      redirectRateMap.delete(ip);
-      cleaned++;
-    }
-  }
-  if (cleaned > 0) {
-    // Using console.log here to avoid circular dependency with logger
-    // This is a low-frequency cleanup operation
-    console.log(`[rate-limit] Cleaned up ${cleaned} expired rate limit entries`);
+// Cleanup expired rate limit entries periodically
+async function cleanupRateLimits() {
+  try {
+    await cleanupExpiredRateLimits();
+  } catch (error) {
+    logger.error('Failed to cleanup rate limits', error instanceof Error ? error : new Error(String(error)));
   }
 }
 
 // Run cleanup every 30 minutes
-const redirectRateMapCleanupInterval = setInterval(cleanupRedirectRateMap, 30 * 60 * 1000);
+setInterval(cleanupRateLimits, 30 * 60 * 1000);
 
 app.get('/:shortCode', async (req, res) => {
   const { shortCode } = req.params;
 
   try {
     const clientIp =
-      (req.headers['x-forwarded-for'] as string) ||
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
       (req.socket?.remoteAddress ?? null);
 
-    if (!checkRateLimit(clientIp)) {
-      return res.status(429).send('Too Many Requests');
+    // Check rate limit using database-backed limiter
+    if (clientIp) {
+      const rateLimitResult = await checkDatabaseRateLimit({
+        tokenKey: clientIp,
+        tokenType: 'redirect',
+        maxRequests: RATE_LIMIT_MAX,
+        windowMs: RATE_LIMIT_WINDOW_MS,
+      });
+
+      if (!rateLimitResult.allowed) {
+        logger.warn('Redirect rate limit exceeded', {
+          ip: clientIp,
+          shortCode,
+          retryAfter: rateLimitResult.retryAfter,
+        });
+        return res.status(429).send('Too Many Requests');
+      }
     }
 
     const { data: urlData, error } = await supabase
@@ -1079,11 +1092,10 @@ app.get('/:shortCode', async (req, res) => {
       shortCode,
       userAgent: req.headers['user-agent'] || null,
       referer: (req.headers['referer'] as string) || null,
-      ip: (req.headers['x-forwarded-for'] as string) || (req.socket?.remoteAddress ?? null)
+      ip: clientIp
     }).catch((err) => {
-      console.error('Failed to log URL click analytics:', {
+      logger.error('Failed to log URL click analytics', err instanceof Error ? err : new Error(String(err)), {
         shortCode,
-        error: err instanceof Error ? err.message : String(err),
       });
     });
 
@@ -1097,16 +1109,17 @@ app.get('/:shortCode', async (req, res) => {
         })
         .eq('short_code', shortCode);
     } catch (err) {
-      console.error('Failed to update click counters for short URL:', {
+      logger.error('Failed to update click counters for short URL', err instanceof Error ? err : new Error(String(err)), {
         shortCode,
-        error: err instanceof Error ? err.message : String(err),
       });
     }
 
     // Redirect
     return res.redirect(301, urlData.original_url);
   } catch (e) {
-    console.error('Redirect error:', e);
+    logger.error('Redirect error', e instanceof Error ? e : new Error(String(e)), {
+      shortCode: req.params.shortCode,
+    });
     return res.status(500).send('Internal server error');
   }
 });
@@ -1129,7 +1142,9 @@ app.get('/api/analytics/:shortCode', async (req, res) => {
     }
     return res.json({ analytics: analytics ?? [] });
   } catch (e) {
-    console.error('Analytics API error:', e);
+    logger.error('Analytics API error', e instanceof Error ? e : new Error(String(e)), {
+      shortCode: req.params.shortCode,
+    });
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1146,13 +1161,13 @@ async function runAnalyticsRetentionCleanup() {
       .delete()
       .lt('clicked_at', cutoff.toISOString());
   } catch (e) {
-    console.error('Analytics retention cleanup failed:', e);
+    logger.error('Analytics retention cleanup failed', e instanceof Error ? e : new Error(String(e)));
   }
 }
 
 // Run at startup and hourly thereafter
 runAnalyticsRetentionCleanup().catch((err) => {
-  console.error('Initial analytics retention cleanup invoke failed:', err);
+  logger.error('Initial analytics retention cleanup invoke failed', err instanceof Error ? err : new Error(String(err)));
 });
 const retentionInterval = setInterval(runAnalyticsRetentionCleanup, 60 * 60 * 1000);
 
@@ -1181,7 +1196,6 @@ function shutdown(signal: string) {
   logger.info(`${signal} received. Shutting down webhook server gracefully...`);
   try {
     clearInterval(retentionInterval);
-    clearInterval(redirectRateMapCleanupInterval);
     clearInterval(webhookRateMapCleanupInterval);
   } catch (error) {
     // Ignore errors during shutdown cleanup
@@ -1192,10 +1206,10 @@ function shutdown(signal: string) {
 
   server.close((err?: Error) => {
     if (err) {
-      console.error('Error during server close:', err);
+      logger.error('Error during server close', err instanceof Error ? err : new Error(String(err)));
       process.exit(1);
     } else {
-      console.log('Webhook server closed. Goodbye!');
+      logger.info('Webhook server closed. Goodbye!');
       process.exit(0);
     }
   });
@@ -1213,7 +1227,7 @@ app.use((err: unknown, req: express.Request, res: express.Response, _next: expre
     err instanceof Error
       ? { message: err.message, stack: err.stack }
       : { message: String(err) };
-  console.error('Unhandled error in request handler:', {
+  logger.error('Unhandled error in request handler', new Error('Unhandled request error'), {
     path: req.path,
     method: req.method,
     requestId,

@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Trash2, X, ChevronLeft, ChevronRight, Check, CheckSquare, Square, Download } from "lucide-react";
+import { Trash2, X, ChevronLeft, ChevronRight, Check, CheckSquare, Square, Download, MessageSquare, Send } from "lucide-react";
+import { useSession } from "next-auth/react";
 
 type ImageItem = {
   id: string;
@@ -9,6 +10,15 @@ type ImageItem = {
   caption?: string | null;
   uploader_type?: string;
   created_at?: string;
+};
+
+type Comment = {
+  id: string;
+  user_discord_id: string;
+  user_type: string;
+  comment: string;
+  created_at: string;
+  updated_at?: string;
 };
 
 type ImageGalleryProps = {
@@ -20,12 +30,17 @@ type ImageGalleryProps = {
 };
 
 export function ImageGallery({ images, onDelete, showDelete = true, mentorshipId, sessionNoteId }: ImageGalleryProps) {
+  const { data: authSession } = useSession();
   const [deleting, setDeleting] = useState<string | null>(null);
   const [lightboxImage, setLightboxImage] = useState<number | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
   const [deletingMultiple, setDeletingMultiple] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [showComments, setShowComments] = useState(false);
+  const [comments, setComments] = useState<Record<string, Comment[]>>({});
+  const [newComment, setNewComment] = useState("");
+  const [submittingComment, setSubmittingComment] = useState(false);
 
   // Handle keyboard navigation in lightbox
   useEffect(() => {
@@ -226,6 +241,59 @@ export function ImageGallery({ images, onDelete, showDelete = true, mentorshipId
     }
   }
 
+  // Load comments for an image
+  async function loadComments(imageId: string) {
+    if (comments[imageId]) return; // Already loaded
+    
+    try {
+      const res = await fetch(`/api/images/${imageId}/comments`);
+      if (res.ok) {
+        const data = await res.json();
+        setComments((prev) => ({ ...prev, [imageId]: data.comments || [] }));
+      }
+    } catch (error) {
+      console.error("Failed to load comments:", error);
+    }
+  }
+
+  // Submit a new comment
+  async function handleSubmitComment(imageId: string) {
+    if (!newComment.trim() || submittingComment) return;
+
+    setSubmittingComment(true);
+    try {
+      const res = await fetch(`/api/images/${imageId}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comment: newComment.trim() }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setComments((prev) => ({
+          ...prev,
+          [imageId]: [...(prev[imageId] || []), data.comment],
+        }));
+        setNewComment("");
+      } else {
+        const error = await res.json().catch(() => ({}));
+        alert(error.error || "Failed to post comment");
+      }
+    } catch (error) {
+      console.error("Failed to submit comment:", error);
+      alert("Failed to submit comment");
+    } finally {
+      setSubmittingComment(false);
+    }
+  }
+
+  // Load comments when lightbox opens or image changes
+  useEffect(() => {
+    if (lightboxImage !== null && images[lightboxImage]) {
+      loadComments(images[lightboxImage].id);
+    }
+  }, [lightboxImage, images]);
+
   if (images.length === 0) {
     return (
       <div className="p-4 rounded-md border border-gray-200 dark:border-neutral-900 bg-white dark:bg-neutral-950">
@@ -390,6 +458,21 @@ export function ImageGallery({ images, onDelete, showDelete = true, mentorshipId
             <X size={24} />
           </button>
 
+          {/* Comments toggle button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowComments(!showComments);
+              if (!showComments) {
+                loadComments(currentImage.id);
+              }
+            }}
+            className="absolute top-4 right-16 p-2 rounded-md bg-white/10 dark:bg-white/10 hover:bg-white/20 dark:hover:bg-white/20 text-white transition-colors z-10"
+            title="Toggle Comments"
+          >
+            <MessageSquare size={24} />
+          </button>
+
           {/* Navigation buttons - always show since we loop */}
           <button
             onClick={(e) => {
@@ -415,7 +498,9 @@ export function ImageGallery({ images, onDelete, showDelete = true, mentorshipId
 
           {/* Image container */}
           <div
-            className="relative max-w-7xl max-h-full flex flex-col items-center"
+            className={`relative max-w-7xl max-h-full flex flex-col items-center transition-all ${
+              showComments ? "mr-96" : ""
+            }`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -432,6 +517,65 @@ export function ImageGallery({ images, onDelete, showDelete = true, mentorshipId
               {lightboxImage + 1} / {images.length}
             </p>
           </div>
+
+          {/* Comments Panel */}
+          {showComments && (
+            <div
+              className="absolute right-0 top-0 bottom-0 w-96 bg-white dark:bg-neutral-900 border-l border-gray-200 dark:border-neutral-800 flex flex-col z-20"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-4 border-b border-gray-200 dark:border-neutral-800">
+                <h3 className="font-semibold text-gray-900 dark:text-white">Comments</h3>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {comments[currentImage.id]?.length > 0 ? (
+                  comments[currentImage.id].map((comment) => (
+                    <div key={comment.id} className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-gray-600 dark:text-neutral-400">
+                          {comment.user_type === "instructor" ? "👨‍🏫 Instructor" : comment.user_type === "admin" ? "👑 Admin" : "👤 Student"}
+                        </span>
+                        <span className="text-xs text-gray-500 dark:text-neutral-500">
+                          {new Date(comment.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-900 dark:text-white">{comment.comment}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-500 dark:text-neutral-500 text-center py-8">
+                    No comments yet. Be the first to comment!
+                  </p>
+                )}
+              </div>
+              <div className="p-4 border-t border-gray-200 dark:border-neutral-800">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSubmitComment(currentImage.id);
+                      }
+                    }}
+                    placeholder="Add a comment..."
+                    className="flex-1 px-3 py-2 rounded-md border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400"
+                    disabled={submittingComment}
+                  />
+                  <button
+                    onClick={() => handleSubmitComment(currentImage.id)}
+                    disabled={!newComment.trim() || submittingComment}
+                    className="p-2 rounded-md bg-indigo-600 dark:bg-indigo-500 text-white hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Send comment"
+                  >
+                    <Send size={18} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </>

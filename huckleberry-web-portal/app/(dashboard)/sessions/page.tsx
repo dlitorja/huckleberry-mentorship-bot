@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { ImageUploader } from "@/components/ImageUploader";
 import { ImageGallery } from "@/components/ImageGallery";
+import { RichTextEditor } from "@/components/RichTextEditor";
 import { Plus, FileText } from "lucide-react";
 
 type Session = { id: string; mentorship_id: string; notes: string | null; session_date: string | null; created_at: string };
@@ -91,7 +92,9 @@ export default function SessionsListPage() {
   }
 
   async function handleCreateNote() {
-    if (!noteContent.trim() || !mentorship?.id || isSubmitting) return;
+    // Check if content has actual text (strip HTML tags)
+    const textContent = noteContent.replace(/<[^>]*>/g, '').trim();
+    if (!textContent || !mentorship?.id || isSubmitting) return;
 
     setIsSubmitting(true);
     try {
@@ -152,17 +155,17 @@ export default function SessionsListPage() {
             <FileText size={18} className="text-gray-600 dark:text-neutral-400" />
             <h2 className="font-medium text-gray-900 dark:text-white">Create Session Note</h2>
           </div>
-          <textarea
-            value={noteContent}
-            onChange={(e) => setNoteContent(e.target.value)}
+          <RichTextEditor
+            content={noteContent}
+            onChange={setNoteContent}
             placeholder="Write your session notes here..."
-            className="w-full min-h-[120px] px-3 py-2 rounded-md border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400"
             disabled={isSubmitting}
+            minHeight="200px"
           />
           <div className="flex items-center gap-2 mt-3">
             <button
               onClick={handleCreateNote}
-              disabled={!noteContent.trim() || isSubmitting}
+              disabled={!noteContent.replace(/<[^>]*>/g, '').trim() || isSubmitting}
               className="px-4 py-2 rounded-md bg-indigo-600 dark:bg-indigo-500 text-white hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? "Creating..." : "Create Note"}
@@ -215,7 +218,11 @@ export default function SessionsListPage() {
               <Link href={`/sessions/${s.id}`} className="font-medium text-gray-900 dark:text-white hover:underline">
                 {new Date(s.created_at).toLocaleString()}
               </Link>
-              <p className="text-sm text-gray-600 dark:text-neutral-400 line-clamp-2 mt-1">{s.notes || "No notes yet."}</p>
+              <p className="text-sm text-gray-600 dark:text-neutral-400 line-clamp-2 mt-1">
+                {s.notes 
+                  ? s.notes.replace(/<[^>]*>/g, '').substring(0, 150) + (s.notes.length > 150 ? '...' : '')
+                  : "No notes yet."}
+              </p>
             </li>
           ))}
           {sessions.length === 0 && (

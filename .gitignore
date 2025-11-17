@@ -92,6 +92,10 @@ build/
 out/
 *.tsbuildinfo
 
+# Next.js
+.next/
+.next/**
+
 # Temporary files
 tmp/
 temp/

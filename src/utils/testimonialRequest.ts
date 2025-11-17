@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import { logger } from './logger.js';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -55,10 +56,13 @@ export async function sendTestimonialRequest(options: {
       `
 		});
 
-		console.log(`✅ Testimonial request sent to ${menteeEmail}`);
+		logger.info('Testimonial request sent', { menteeEmail, instructorName, sessionNumber });
 		return true;
 	} catch (error) {
-		console.error('Failed to send testimonial request:', error);
+		logger.error('Failed to send testimonial request', error instanceof Error ? error : new Error(String(error)), {
+			menteeEmail,
+			instructorName,
+		});
 		return false;
 	}
 }

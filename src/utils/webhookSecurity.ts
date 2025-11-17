@@ -2,6 +2,7 @@
 // Webhook signature verification utilities
 
 import crypto from 'crypto';
+import { logger } from './logger.js';
 
 /**
  * Verify webhook signature using HMAC SHA-256
@@ -31,7 +32,7 @@ export function verifyWebhookSignature(
       Buffer.from(expectedSignature, 'hex')
     );
   } catch (error) {
-    console.error('Webhook signature verification error:', error);
+    logger.error('Webhook signature verification error', error instanceof Error ? error : new Error(String(error)));
     return false;
   }
 }
@@ -65,10 +66,14 @@ export function createWebhookVerificationMiddleware(secretEnvVar: string = 'WEBH
     
     if (!secret) {
       if (requireVerification) {
-        console.error(`Webhook secret (${secretEnvVar}) is required but not configured. Rejecting request.`);
+        logger.error('Webhook secret is required but not configured', new Error('Webhook verification not configured'), {
+          secretEnvVar,
+        });
         return res.status(500).json({ error: 'Webhook verification not configured' });
       }
-      console.warn(`Webhook secret (${secretEnvVar}) not configured. Skipping verification.`);
+      logger.warn('Webhook secret not configured. Skipping verification.', {
+        secretEnvVar,
+      });
       // Allow request to proceed if verification is optional
       return next();
     }
@@ -79,30 +84,33 @@ export function createWebhookVerificationMiddleware(secretEnvVar: string = 'WEBH
 
     if (!signature) {
       if (requireVerification) {
-        console.error('Webhook request missing signature header (verification required)');
+        logger.error('Webhook request missing signature header (verification required)', new Error('Missing signature'), {
+          path: req.path,
+        });
         return res.status(401).json({ error: 'Missing webhook signature' });
       }
-      console.warn('Webhook request missing signature header. Allowing request (verification optional).');
-      // Log headers for debugging to see what Kajabi actually sends
-      console.log('Available headers:', Object.keys(req.headers).filter(h => 
-        h.toLowerCase().includes('signature') || 
-        h.toLowerCase().includes('kajabi') ||
-        h.toLowerCase().includes('webhook')
-      ));
+      logger.warn('Webhook request missing signature header. Allowing request (verification optional).', {
+        path: req.path,
+        availableHeaders: Object.keys(req.headers).filter(h => 
+          h.toLowerCase().includes('signature') || 
+          h.toLowerCase().includes('kajabi') ||
+          h.toLowerCase().includes('webhook')
+        ),
+      });
       return next();
     }
 
     const isValid = verifyWebhookSignature(rawBody, signature, secret);
 
     if (!isValid) {
-      console.error('Webhook signature verification failed', {
+      logger.error('Webhook signature verification failed', new Error('Invalid signature'), {
         path: req.path,
-        signature: signature.substring(0, 20) + '...',
+        signaturePrefix: signature.substring(0, 20) + '...',
       });
       return res.status(401).json({ error: 'Invalid webhook signature' });
     }
 
-    console.log('✅ Webhook signature verified successfully');
+    logger.debug('Webhook signature verified successfully', { path: req.path });
     next();
   };
 }

@@ -65,7 +65,13 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       if (error) {
         throw new Error(`Failed to fetch purchase data: ${error.message}`);
       }
-      return (data || []) as PendingJoin[];
+      // Transform the data to match PendingJoin type (instructors might be array or single object)
+      return (data || []).map((item: any) => ({
+        ...item,
+        instructors: Array.isArray(item.instructors) 
+          ? (item.instructors[0] || null)
+          : item.instructors
+      })) as PendingJoin[];
     },
     { days, startDate: startDateStr }
   );
