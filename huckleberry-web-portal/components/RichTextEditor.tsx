@@ -35,10 +35,7 @@ export function RichTextEditor({
       onChange(editor.getHTML());
     },
     editable: !disabled,
-<<<<<<< HEAD
     immediatelyRender: false,
-=======
->>>>>>> fc2b4d1 (feat: Add search & filter components and API routes)
     editorProps: {
       attributes: {
         class: "prose prose-sm dark:prose-invert max-w-none focus:outline-none px-3 py-2 min-h-[120px]",
