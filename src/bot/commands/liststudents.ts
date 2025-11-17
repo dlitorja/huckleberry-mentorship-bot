@@ -33,6 +33,24 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   );
 
   // Fetch mentorships with performance monitoring
+  type SupabaseMentorshipRow = {
+    mentee_id: string;
+    sessions_remaining: number;
+    total_sessions: number;
+    last_session_date: string | null;
+    status: string;
+    mentees: { discord_id: string | null } | { discord_id: string | null }[] | null;
+  };
+
+  type MentorshipRow = {
+    mentee_id: string;
+    sessions_remaining: number;
+    total_sessions: number;
+    last_session_date: string | null;
+    status: string;
+    mentees: { discord_id: string | null } | null;
+  };
+
   const data = await measurePerformance(
     'liststudents.mentorships_lookup',
     async () => {
@@ -48,7 +66,12 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       if (!data || data.length === 0) {
         return [];
       }
-      return data;
+      
+      // Normalize mentees to always be a single object (Supabase may return array)
+      return (data as SupabaseMentorshipRow[]).map(row => ({
+        ...row,
+        mentees: Array.isArray(row.mentees) ? (row.mentees[0] || null) : row.mentees
+      })) as MentorshipRow[];
     },
     { instructorId: instructorData.id }
   );
@@ -60,16 +83,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
   let studentsAtZero = 0;
   
-  type MentorshipRow = {
-    mentee_id: string;
-    sessions_remaining: number;
-    total_sessions: number;
-    last_session_date: string | null;
-    status: string;
-    mentees: { discord_id: string | null } | null;
-  };
-  
-  const message = (data as MentorshipRow[])
+  const message = data
     .map(row => {
       const lastSession = row.last_session_date 
         ? new Date(row.last_session_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
