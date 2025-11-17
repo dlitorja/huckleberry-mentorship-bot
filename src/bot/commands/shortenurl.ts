@@ -30,7 +30,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
   if (!interaction.deferred && !interaction.replied) {
     try {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    } catch (err) {
+    } catch {
       // If we can't defer (e.g., stale interaction), bail early
       return;
     }

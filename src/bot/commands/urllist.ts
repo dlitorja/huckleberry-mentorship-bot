@@ -5,6 +5,7 @@ import { CONFIG } from '../../config/constants.js';
 import { executeWithErrorHandling } from '../../utils/commandErrorHandler.js';
 import { measurePerformance } from '../../utils/performance.js';
 import { validatePositiveInteger } from '../../utils/validation.js';
+import type { ShortenedUrl } from '../../types/database.js';
 
 export const data = new SlashCommandBuilder()
   .setName('urllist')
@@ -82,14 +83,15 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     .setTimestamp();
 
   urls.forEach(url => {
-    const shortUrl = `${baseUrl}/${(url as any).short_code}`;
-    const original = (url as any).original_url.length > 50 
-      ? (url as any).original_url.substring(0, 50) + '...' 
-      : (url as any).original_url;
+    const urlData = url as ShortenedUrl;
+    const shortUrl = `${baseUrl}/${urlData.short_code}`;
+    const original = urlData.original_url.length > 50 
+      ? urlData.original_url.substring(0, 50) + '...' 
+      : urlData.original_url;
     
     embed.addFields({
-      name: `/${(url as any).short_code}`,
-      value: `🔗 [${original}](${shortUrl})\n👆 ${(url as any).click_count} clicks\n📅 ${new Date((url as any).created_at).toLocaleDateString()}`,
+      name: `/${urlData.short_code}`,
+      value: `🔗 [${original}](${shortUrl})\n👆 ${urlData.click_count} clicks\n📅 ${new Date(urlData.created_at).toLocaleDateString()}`,
       inline: false
     });
   });

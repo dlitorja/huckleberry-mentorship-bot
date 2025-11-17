@@ -60,7 +60,16 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
   let studentsAtZero = 0;
   
-  const message = data
+  type MentorshipRow = {
+    mentee_id: string;
+    sessions_remaining: number;
+    total_sessions: number;
+    last_session_date: string | null;
+    status: string;
+    mentees: { discord_id: string | null } | null;
+  };
+  
+  const message = (data as MentorshipRow[])
     .map(row => {
       const lastSession = row.last_session_date 
         ? new Date(row.last_session_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -70,7 +79,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       const zeroIndicator = row.sessions_remaining === 0 ? ' ⚠️ **NEEDS ATTENTION**' : '';
       if (row.sessions_remaining === 0) studentsAtZero++;
       
-      return `<@${(row.mentees as any)?.discord_id}> – ${row.sessions_remaining}/${row.total_sessions} sessions | Last: ${lastSession}${zeroIndicator}`;
+      return `<@${row.mentees?.discord_id}> – ${row.sessions_remaining}/${row.total_sessions} sessions | Last: ${lastSession}${zeroIndicator}`;
     })
     .join('\n');
 

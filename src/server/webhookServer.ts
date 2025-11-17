@@ -11,7 +11,7 @@ import { CONFIG, getSupportContactString } from '../config/constants.js';
 import { removeStudentRole } from '../utils/roleManagement.js';
 import { logClick } from '../utils/urlShortener.js';
 import { createWebhookVerificationMiddleware } from '../utils/webhookSecurity.js';
-import { atomicallyUpsertMentorship, atomicallyIncrementMentorshipSessions, checkAndMarkWebhookProcessed } from '../utils/databaseTransactions.js';
+import { atomicallyUpsertMentorship, checkAndMarkWebhookProcessed } from '../utils/databaseTransactions.js';
 import { discordApi } from '../utils/discordApi.js';
 import { logger } from '../utils/logger.js';
 import { validateEmail, validateName, validateNumeric, validateCurrency, validateTransactionId } from '../utils/validation.js';
@@ -634,7 +634,6 @@ app.post('/webhook/kajabi', webhookRateLimitMiddleware, verifyWebhook, async (re
 
     // Validate and sanitize input to prevent SQL injection
     let email: string;
-    let offerIdString: string;
     
     try {
       email = validateEmail(rawEmail, 'email');
@@ -659,7 +658,7 @@ app.post('/webhook/kajabi', webhookRateLimitMiddleware, verifyWebhook, async (re
       return res.status(400).json({ error: 'Invalid offer_id format' });
     }
     
-    offerIdString = String(offerIdNum);
+    const offerIdString = String(offerIdNum);
 
     // Lookup the instructor for this offer with performance monitoring
     const offerData = await measurePerformance(
@@ -750,7 +749,7 @@ app.post('/webhook/kajabi', webhookRateLimitMiddleware, verifyWebhook, async (re
 
     // Atomically deduplicate webhook processing using transaction_id with performance monitoring
     // This inserts the purchase record immediately, eliminating race conditions
-    const { shouldProcess, alreadyProcessed } = await measurePerformance(
+    const { shouldProcess } = await measurePerformance(
       'webhook.kajabi.deduplication',
       async () => {
         return await checkAndMarkWebhookProcessed(

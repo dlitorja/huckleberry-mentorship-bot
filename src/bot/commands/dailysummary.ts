@@ -66,8 +66,18 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
         throw new Error(`Failed to fetch purchase data: ${error.message}`);
       }
       // Transform the data to match PendingJoin type (instructors might be array or single object)
-      return (data || []).map((item: any) => ({
-        ...item,
+      type SupabasePendingJoin = {
+        id: string;
+        email: string;
+        created_at: string;
+        joined_at: string | null;
+        instructors: { name: string | null } | { name: string | null }[] | null;
+      };
+      return (data || []).map((item: SupabasePendingJoin) => ({
+        id: item.id,
+        email: item.email,
+        created_at: item.created_at,
+        joined_at: item.joined_at,
         instructors: Array.isArray(item.instructors) 
           ? (item.instructors[0] || null)
           : item.instructors

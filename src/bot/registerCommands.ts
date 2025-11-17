@@ -32,7 +32,11 @@ async function registerCommands() {
     const commandsPath = path.join(__dirname, 'commands');
     const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.ts') || file.endsWith('.js'));
 
-    const commands: any[] = [];
+    type CommandData = {
+      name: string;
+      [key: string]: unknown;
+    };
+    const commands: CommandData[] = [];
 
     for (const file of commandFiles) {
       const filePath = path.join(commandsPath, file);

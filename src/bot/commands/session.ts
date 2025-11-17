@@ -4,11 +4,10 @@ import { SlashCommandBuilder } from '@discordjs/builders';
 import { ChatInputCommandInteraction, MessageFlags } from 'discord.js';
 import { supabase } from '../supabaseClient.js';
 import { sendTestimonialRequest } from '../../utils/testimonialRequest.js';
-import { getMentorshipByDiscordIds } from '../../utils/mentorship.js';
+import { getMentorshipByDiscordIds, type MentorshipWithRelations } from '../../utils/mentorship.js';
 import { executeWithErrorHandling, handleAsyncError } from '../../utils/commandErrorHandler.js';
 import { measurePerformance } from '../../utils/performance.js';
 import { validateDate } from '../../utils/validation.js';
-import { logger } from '../../utils/logger.js';
 
 export const data = new SlashCommandBuilder()
   .setName('session')
@@ -131,8 +130,9 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
           const alreadySubmitted = Boolean(mentorshipCheck?.testimonial_submitted);
 
           if (!alreadyRequested && !alreadySubmitted) {
-            const menteeEmail = (mentorshipData as any).mentees?.email || null;
-            const instructorName = (mentorshipData as any).instructors?.name || 'your instructor';
+            const mentorshipWithRelations = mentorshipData as MentorshipWithRelations;
+            const menteeEmail = mentorshipWithRelations.mentees?.email || null;
+            const instructorName = mentorshipWithRelations.instructors?.name || 'your instructor';
 
             if (menteeEmail) {
               const sent = await sendTestimonialRequest({

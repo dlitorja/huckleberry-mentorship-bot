@@ -52,6 +52,16 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
 
   const discordUser = interaction.options.getUser('discorduser', true);
 
+  type PendingJoinWithInstructor = {
+    id: string;
+    email: string;
+    instructor_id: string;
+    discord_user_id: string | null;
+    created_at: string;
+    joined_at: string | null;
+    instructors: { discord_id: string | null; name: string | null } | null;
+  };
+
   // Find pending join by email with instructor data in a single query
   const pendingJoin = await measurePerformance(
     'linkstudent.find_pending_join',
@@ -71,7 +81,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       if (error || !data) {
         throw new Error(`No pending join found for email: ${email}`);
       }
-      return data;
+      return data as PendingJoinWithInstructor;
     },
     { email }
   );
@@ -117,9 +127,9 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     }
 
     // Send welcome DM to student (fire-and-forget)
-    const instructorMention = (pendingJoin as any).instructors?.discord_id 
-      ? `<@${(pendingJoin as any).instructors.discord_id}>` 
-      : (pendingJoin as any).instructors?.name || 'your instructor';
+    const instructorMention = pendingJoin.instructors?.discord_id 
+      ? `<@${pendingJoin.instructors.discord_id}>` 
+      : pendingJoin.instructors?.name || 'your instructor';
       
     handleAsyncError(
       discordUser.send(
@@ -134,17 +144,18 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
     );
 
     // Send notification to instructor (fire-and-forget)
-    if ((pendingJoin as any).instructors?.discord_id) {
+    const instructorDiscordId = pendingJoin.instructors?.discord_id;
+    if (instructorDiscordId) {
       handleAsyncError(
         (async () => {
-          const instructor = await interaction.client.users.fetch((pendingJoin as any).instructors.discord_id);
+          const instructor = await interaction.client.users.fetch(instructorDiscordId);
           await instructor.send(
             `🎓 **New Mentee Assigned**\n\n` +
             `${discordUser} (${email}) has been manually linked to your mentorship program.\n\n` +
             `They're ready to get started!`
           );
         })(),
-        { commandName: 'linkstudent', operation: 'send_instructor_notification', instructorId: (pendingJoin as any).instructors.discord_id }
+        { commandName: 'linkstudent', operation: 'send_instructor_notification', instructorId: instructorDiscordId }
       );
     }
 
@@ -199,7 +210,11 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
             });
           } else {
             // Mentee exists, check if mentorship exists
-            const existingMentorships = (existingMentee as any).mentorships || [];
+            type MenteeWithMentorships = {
+              id: string;
+              mentorships: { id: string }[] | null;
+            };
+            const existingMentorships = (existingMentee as MenteeWithMentorships).mentorships || [];
             if (existingMentorships.length === 0) {
               // Create mentorship record with default sessions
               await supabase
@@ -227,7 +242,7 @@ async function executeCommand(interaction: ChatInputCommandInteraction) {
       `✅ **Successfully linked!**\n\n` +
       `📧 Email: ${email}\n` +
       `👤 Discord: ${discordUser.tag}\n` +
-      `👨‍🏫 Instructor: ${(pendingJoin as any).instructors?.name || 'Unknown'}\n` +
+      `👨‍🏫 Instructor: ${pendingJoin.instructors?.name || 'Unknown'}\n` +
       `🎭 Role: Assigned\n` +
       `💬 Welcome DM: Sent\n\n` +
       `The student is now fully set up!`

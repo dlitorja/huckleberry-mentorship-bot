@@ -1,7 +1,8 @@
 // src/bot/index.ts
 
 import 'dotenv/config';
-import { Client, GatewayIntentBits, ChatInputCommandInteraction, MessageFlags } from 'discord.js';
+import { Client, GatewayIntentBits, ChatInputCommandInteraction } from 'discord.js';
+import { SlashCommandBuilder } from '@discordjs/builders';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -30,7 +31,12 @@ const client = new Client({
 // --------------------
 // Load commands dynamically
 // --------------------
-const commands: Map<string, any> = new Map();
+type CommandModule = {
+  data: SlashCommandBuilder;
+  execute: (interaction: ChatInputCommandInteraction) => Promise<void>;
+};
+
+const commands: Map<string, CommandModule> = new Map();
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(f => f.endsWith('.ts') || f.endsWith('.js'));
 
