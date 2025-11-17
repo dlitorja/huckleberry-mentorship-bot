@@ -1,16 +1,17 @@
-import { UserRole } from "@/lib/auth";
+// Type augmentation for NextAuth
+// UserRole is defined as: "student" | "instructor" | "admin" | "unknown"
 
 declare module "next-auth" {
   interface Session {
     discordId?: string;
-    role?: UserRole;
+    role?: "student" | "instructor" | "admin" | "unknown";
   }
 }
 
 declare module "next-auth/jwt" {
   interface JWT {
     discordId?: string;
-    role?: UserRole;
+    role?: "student" | "instructor" | "admin" | "unknown";
   }
 }
 
