@@ -35,23 +35,34 @@ const nextConfig = {
       config.resolve.plugins = [];
     }
     
-    // Add tsconfig-paths-webpack-plugin to resolve paths from tsconfig.json
-    config.resolve.plugins.push(
-      new TsconfigPathsPlugin({
-        configFile: path.join(projectRoot, "tsconfig.json"),
-        extensions: [".ts", ".tsx", ".js", ".jsx"],
-        baseUrl: projectRoot,
-      })
-    );
+    // Add tsconfig-paths-webpack-plugin FIRST to ensure it runs before other resolvers
+    // This plugin reads paths from tsconfig.json and applies them to webpack
+    const tsconfigPlugin = new TsconfigPathsPlugin({
+      configFile: path.join(projectRoot, "tsconfig.json"),
+      extensions: config.resolve.extensions || [".ts", ".tsx", ".js", ".jsx", ".json"],
+      baseUrl: projectRoot,
+      logLevel: "INFO",
+    });
     
-    // Also set up @ alias directly as a fallback
+    // Insert at the beginning to ensure it runs first
+    config.resolve.plugins.unshift(tsconfigPlugin);
+    
+    // Also set up @ alias directly as a fallback (this should work but plugin is preferred)
     if (!config.resolve.alias) {
       config.resolve.alias = {};
     }
+    
+    // Ensure @ alias points to project root
+    // This is a direct fallback if the plugin doesn't work
     config.resolve.alias = {
       ...config.resolve.alias,
       '@': projectRoot,
     };
+    
+    // Debug: Log the configuration (will appear in CI logs)
+    console.log('[Next.js Config] Project root:', projectRoot);
+    console.log('[Next.js Config] @ alias:', config.resolve.alias['@']);
+    console.log('[Next.js Config] Resolve plugins count:', config.resolve.plugins.length);
     
     return config;
   },
