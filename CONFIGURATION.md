@@ -27,6 +27,17 @@ RESEND_FROM_EMAIL=noreply@yourdomain.com
 TESTIMONIAL_FORM_URL=https://forms.gle/YOUR_FORM_ID
 ```
 
+### Video Calling (Agora.io) - Optional
+```env
+NEXT_PUBLIC_AGORA_APP_ID=your_agora_app_id
+AGORA_APP_CERTIFICATE=your_agora_app_certificate
+```
+
+**Note:** These are only required for the video calling feature. To get Agora credentials:
+1. Sign up at [https://www.agora.io/](https://www.agora.io/)
+2. Create a new project
+3. Copy your App ID and App Certificate from the project dashboard
+
 ### Server Configuration
 ```env
 WEBHOOK_PORT=3000

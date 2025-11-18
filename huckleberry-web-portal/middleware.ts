@@ -32,5 +32,6 @@ export const config = {
     '/sessions/:path*',
     '/assets/:path*',
     '/video/:path*',
+    '/video-call/:path*',
   ],
 };

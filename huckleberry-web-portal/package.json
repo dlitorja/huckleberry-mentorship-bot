@@ -26,6 +26,8 @@
     "@tiptap/react": "^3.10.7",
     "@tiptap/starter-kit": "^3.10.7",
     "@upstash/redis": "^1.31.6",
+    "agora-rtc-sdk-ng": "^4.24.0",
+    "agora-token": "^2.0.5",
     "browser-image-compression": "^2.0.2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",

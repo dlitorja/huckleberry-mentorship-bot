@@ -616,9 +616,10 @@ async function handleNewStudentPurchase(params: {
   // 3) Record purchase (only if transaction_id was null, since it was already inserted atomically if it existed)
   // The purchase record is created atomically in checkAndMarkWebhookProcessed when transaction_id exists
   // If transaction_id is null, we can't deduplicate, so insert it here
-  if (!transactionId) {
+  // Only record purchase if mentee was successfully created/retrieved (to avoid orphaned records)
+  if (!transactionId && menteeId) {
     try {
-      await supabase
+      const { error: purchaseError } = await supabase
         .from('purchases')
         .insert({
           email: email.toLowerCase(),
@@ -629,10 +630,29 @@ async function handleNewStudentPurchase(params: {
           currency: currency ?? null,
           purchased_at: new Date().toISOString(),
         });
+
+      if (purchaseError) {
+        logger.error('Failed to record purchase (no transaction_id)', purchaseError instanceof Error ? purchaseError : new Error(String(purchaseError)), {
+          email: email.toLowerCase(),
+          offerId: offerIdString,
+        });
+        await notifyAdminError({
+          type: 'database_error',
+          message: 'Failed to record purchase during purchase webhook',
+          details: purchaseError,
+          studentEmail: email,
+        });
+      }
     } catch (e) {
-      logger.error('Failed to record purchase (no transaction_id)', e instanceof Error ? e : new Error(String(e)), {
+      logger.error('Exception during purchase recording', e instanceof Error ? e : new Error(String(e)), {
         email: email.toLowerCase(),
         offerId: offerIdString,
+      });
+      await notifyAdminError({
+        type: 'database_error',
+        message: 'Exception during purchase recording in purchase webhook',
+        details: e,
+        studentEmail: email,
       });
     }
   }

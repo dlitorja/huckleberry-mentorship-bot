@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { cookies } from "next/headers";
+import { Video } from "lucide-react";
 
 type MentorshipData = {
   id: string;
@@ -88,6 +89,15 @@ export default async function DashboardPage() {
                   out of {mentorship.total_sessions} total sessions
                 </p>
               )}
+              <div className="mt-4">
+                <Link
+                  href={`/video-call/${mentorship.id}`}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-green-600 dark:bg-green-500 text-white font-medium hover:bg-green-700 dark:hover:bg-green-600 transition-colors"
+                >
+                  <Video size={18} />
+                  Start Video Call
+                </Link>
+              </div>
             </div>
           </div>
         </div>

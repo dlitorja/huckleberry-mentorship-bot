@@ -25,6 +25,7 @@ export const ENV_CONFIG = {
   
   // Agora configuration
   NEXT_PUBLIC_AGORA_APP_ID: getEnvVar('NEXT_PUBLIC_AGORA_APP_ID'),
+  AGORA_APP_CERTIFICATE: getEnvVar('AGORA_APP_CERTIFICATE'),
   
   // Other configuration
   API_BASE_URL: getEnvVar('API_BASE_URL', 'http://localhost:3000'),

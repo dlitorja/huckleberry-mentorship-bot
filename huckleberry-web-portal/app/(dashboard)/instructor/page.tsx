@@ -14,7 +14,8 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { TimePicker } from "@/components/ui/time-picker";
 import { TimezoneSelector } from "@/components/ui/timezone-selector";
 import { cn } from "@/lib/utils";
-import { Pencil, X, Check } from "lucide-react";
+import { Pencil, X, Check, Video } from "lucide-react";
+import Link from "next/link";
 
 type Mentorship = {
   id: string;
@@ -634,8 +635,15 @@ function MentorshipCard({
         </div>
       </div>
 
-      {/* Primary Action: Log Session */}
-      <div className="mb-4">
+      {/* Primary Actions */}
+      <div className="mb-4 space-y-2">
+        <Link
+          href={`/video-call/${m.id}`}
+          className="w-full px-4 py-3 rounded-md bg-green-600 dark:bg-green-500 text-white font-medium hover:bg-green-700 dark:hover:bg-green-600 transition-colors flex items-center justify-center gap-2"
+        >
+          <Video size={18} />
+          Start Video Call with {menteeName}
+        </Link>
         <button
           onClick={() => logSession(m.id)}
           disabled={sessionsRemaining === 0}
