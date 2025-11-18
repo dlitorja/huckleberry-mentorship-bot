@@ -24,7 +24,7 @@ A comprehensive Discord bot and webhook system for managing 1-on-1 mentorship pr
 - **Role-Based Access**: Students see only their data, instructors see their mentees, admins have full access
 - **Discord OAuth Integration**: Seamless authentication using existing Discord accounts
 
-See **[PHASE_2_IMPLEMENTATION_STATUS.md](PHASE_2_IMPLEMENTATION_STATUS.md)** for complete web portal feature list and status.
+See **[docs/PHASE_2_IMPLEMENTATION_STATUS.md](docs/PHASE_2_IMPLEMENTATION_STATUS.md)** for complete web portal feature list and status.
 
 ### 💬 Discord Commands
 - **Instructor Commands**: `/session`, `/addsessions`, `/liststudents`, `/sessionsummary`, `/addnote`, `/viewnotes`, `/addlink`, `/shortenurl`, `/urlstats`, `/urllist`, `/urldelete`
@@ -53,12 +53,12 @@ See **[PHASE_2_IMPLEMENTATION_STATUS.md](PHASE_2_IMPLEMENTATION_STATUS.md)** for
 ## Quick Start
 
 For detailed setup instructions, see:
-- **[CONFIGURATION.md](CONFIGURATION.md)** - Complete environment variable guide
-- **[FLY_QUICKSTART.md](FLY_QUICKSTART.md)** - Deploy to Fly.io in minutes
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Comprehensive deployment guide
-- **[COMMANDS_SUMMARY.md](COMMANDS_SUMMARY.md)** - All Discord commands reference
-- **[ADMIN_FEATURES.md](ADMIN_FEATURES.md)** - Admin notification system details
-- **[STUDENT_REMOVAL.md](STUDENT_REMOVAL.md)** - Automatic & manual student removal guide
+- **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** - Complete environment variable guide
+- **[docs/FLY_QUICKSTART.md](docs/FLY_QUICKSTART.md)** - Deploy to Fly.io in minutes
+- **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** - Comprehensive deployment guide
+- **[docs/COMMANDS_SUMMARY.md](docs/COMMANDS_SUMMARY.md)** - All Discord commands reference
+- **[docs/ADMIN_FEATURES.md](docs/ADMIN_FEATURES.md)** - Admin notification system details
+- **[docs/STUDENT_REMOVAL.md](docs/STUDENT_REMOVAL.md)** - Automatic & manual student removal guide
 
 ### Local Development
 
@@ -75,7 +75,7 @@ npm install
 
 3. **Set up environment variables:**
    - Copy `.env.example` to `.env` (if available) or create `.env`
-   - See [CONFIGURATION.md](CONFIGURATION.md) for all required variables
+   - See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for all required variables
 
 4. **Set up database:**
    - Run the SQL files in `database/` in your Supabase SQL editor
@@ -93,7 +93,7 @@ npm run start:all
 
 ## Configuration
 
-Create a `.env` file in the root directory. See **[CONFIGURATION.md](CONFIGURATION.md)** for the complete list of required and optional environment variables.
+Create a `.env` file in the root directory. See **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** for the complete list of required and optional environment variables.
 
 **Minimal `.env` example:**
 ```env
@@ -159,7 +159,7 @@ See `database/schema.sql` for complete schema details.
 
 ## Commands
 
-For complete command documentation, see **[COMMANDS_SUMMARY.md](COMMANDS_SUMMARY.md)**.
+For complete command documentation, see **[docs/COMMANDS_SUMMARY.md](docs/COMMANDS_SUMMARY.md)**.
 
 ### Instructor Commands
 
@@ -286,7 +286,7 @@ export async function execute(interaction: CommandInteraction) {
 
 ### Production Deployment (Fly.io)
 
-See **[FLY_QUICKSTART.md](FLY_QUICKSTART.md)** for step-by-step deployment guide.
+See **[docs/FLY_QUICKSTART.md](docs/FLY_QUICKSTART.md)** for step-by-step deployment guide.
 
 **Quick deploy:**
 ```bash

@@ -274,9 +274,9 @@ After implementing these features:
 
 ## 📚 Related Documentation
 
-- [COMMANDS_SUMMARY.md](COMMANDS_SUMMARY.md) - All Discord commands
-- [KAJABI_SETUP.md](KAJABI_SETUP.md) - Kajabi webhook setup
-- [ADMIN_FEATURES.md](ADMIN_FEATURES.md) - Admin notification system
+- [COMMANDS_SUMMARY.md](./COMMANDS_SUMMARY.md) - All Discord commands
+- [KAJABI_SETUP.md](./KAJABI_SETUP.md) - Kajabi webhook setup
+- [ADMIN_FEATURES.md](./ADMIN_FEATURES.md) - Admin notification system
 
 ---
 
@@ -288,5 +288,4 @@ Potential improvements for future versions:
 - **Grace period:** Option to keep role for X days after cancellation
 - **Re-activation:** Automatic role re-assignment if student repurchases after cancellation
 - **Analytics dashboard:** Web UI showing removal reasons, retention rates, etc.
-
 

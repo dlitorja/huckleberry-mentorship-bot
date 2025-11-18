@@ -61,13 +61,6 @@ export function useAgoraVideoCall(config: AgoraVideoCallConfig) {
     // NEXT_PUBLIC_ variables are available in client components
     const appId = process.env.NEXT_PUBLIC_AGORA_APP_ID || ENV_CONFIG.NEXT_PUBLIC_AGORA_APP_ID;
     
-    // Debug: log the value (will be empty string if not set)
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[Agora] App ID configured:', appId ? 'Yes' : 'No', appId ? `(length: ${appId.length})` : '');
-      console.log('[Agora] From process.env:', process.env.NEXT_PUBLIC_AGORA_APP_ID ? 'Yes' : 'No');
-      console.log('[Agora] From ENV_CONFIG:', ENV_CONFIG.NEXT_PUBLIC_AGORA_APP_ID ? 'Yes' : 'No');
-    }
-    
     if (!appId || appId.trim() === '') {
       setError(new Error('Agora App ID is not configured. Please check your .env.local file and restart the dev server.'));
       setCallState('error');
@@ -78,6 +71,17 @@ export function useAgoraVideoCall(config: AgoraVideoCallConfig) {
     const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
     clientRef.current = client;
     setIsClientReady(true);
+
+    // Set up connection state handlers
+    client.on('connection-state-change', (curState, revState) => {
+      console.log('[Agora] Connection state changed:', revState, '->', curState);
+      // Agora connection states: 'CONNECTING' | 'RECONNECTING' | 'CONNECTED' | 'DISCONNECTING'
+      // If we're disconnecting and not reconnecting, treat as connection lost
+      if (curState === 'DISCONNECTING' && revState !== 'RECONNECTING') {
+        setError(new Error(`Connection lost: ${curState}`));
+        setCallState('error');
+      }
+    });
 
     // Set up event handlers
     client.on('user-published', async (user, mediaType) => {
@@ -131,13 +135,11 @@ export function useAgoraVideoCall(config: AgoraVideoCallConfig) {
 
     // Prevent multiple simultaneous join attempts
     if (isJoiningRef.current || isLeavingRef.current) {
-      console.log('[Agora] Already joining or leaving, skipping');
       return;
     }
 
     // Check if already joined
     if (callState === 'joined' || callState === 'joining') {
-      console.log('[Agora] Already joined or joining, skipping');
       return;
     }
 
@@ -155,6 +157,11 @@ export function useAgoraVideoCall(config: AgoraVideoCallConfig) {
         AgoraRTC.createMicrophoneAudioTrack(),
         AgoraRTC.createCameraVideoTrack(),
       ]);
+
+      // Ensure video track is enabled before setting state
+      if (videoTrack.setEnabled) {
+        await videoTrack.setEnabled(true);
+      }
 
       setLocalAudioTrack(audioTrack);
       setLocalVideoTrack(videoTrack);
@@ -174,6 +181,15 @@ export function useAgoraVideoCall(config: AgoraVideoCallConfig) {
 
       setCallState('joined');
       isJoiningRef.current = false;
+
+      // Small delay to ensure everything is ready, then trigger a re-render
+      // This helps ensure the video element gets created
+      setTimeout(() => {
+        // Force a state update to trigger video rendering
+        if (videoTrack.setEnabled) {
+          videoTrack.setEnabled(true).catch(() => {});
+        }
+      }, 100);
     } catch (err) {
       isJoiningRef.current = false;
       const error = err instanceof Error ? err : new Error(String(err));
@@ -201,13 +217,11 @@ export function useAgoraVideoCall(config: AgoraVideoCallConfig) {
 
     // Prevent multiple simultaneous leave attempts
     if (isLeavingRef.current) {
-      console.log('[Agora] Already leaving, skipping');
       return;
     }
 
     // If we're still joining, wait a bit for it to complete or fail
     if (isJoiningRef.current) {
-      console.log('[Agora] Still joining, waiting before leaving...');
       // Wait up to 5 seconds for join to complete
       let waitCount = 0;
       while (isJoiningRef.current && waitCount < 50) {

@@ -2,7 +2,7 @@
 
 **Purpose:** Track and re-engage past students using Supabase queries and CSV exports for Kajabi email campaigns
 
-**Status:** Planning Phase  
+**Status:** ✅ Implemented  
 **Approach:** Supabase Views + CSV Export (No Discord commands needed!)  
 **Priority:** High (retention, repeat customers)  
 **Estimated Time:** 10 minutes to set up
@@ -35,12 +35,9 @@ Everything you need is already in the database!
 **In `instructors` Table:**
 - ✅ Instructor names and IDs
 
-**In `session_notes` Table:**
-- ✅ Topics covered, progress notes
-
 ---
 
-## 🗄️ **Database Setup (Optional Enhancement)**
+## 🗄️ **Database Setup**
 
 ### **Add Tracking Columns (Optional)**
 
@@ -69,6 +66,8 @@ ADD COLUMN IF NOT EXISTS admin_notes TEXT;
 ### **Main View: `alumni_export`**
 
 Run this SQL in Supabase to create a permanent view:
+
+**File:** `database/add_alumni_tracking.sql`
 
 ```sql
 CREATE OR REPLACE VIEW alumni_export AS
@@ -180,44 +179,6 @@ ORDER BY ended_date_formatted DESC;
 
 ---
 
-#### **By Completion Rate:**
-```sql
--- High completion (3-4 sessions) - Best candidates
-SELECT email, instructor_name, sessions_completed, ended_date_formatted
-FROM alumni_export
-WHERE sessions_completed >= 3
-ORDER BY ended_date_formatted DESC;
-
--- Low completion (1-2 sessions) - Understand why
-SELECT email, instructor_name, sessions_completed, end_reason
-FROM alumni_export
-WHERE sessions_completed <= 2
-ORDER BY ended_date_formatted DESC;
-```
-
----
-
-#### **By Time Period:**
-```sql
--- Last 3 months (recent, maybe too soon)
-SELECT * FROM alumni_export
-WHERE months_since_ended <= 3;
-
--- 3-6 months (prime time!)
-SELECT * FROM alumni_export
-WHERE months_since_ended BETWEEN 3 AND 6;
-
--- 6-12 months (long-term check-in)
-SELECT * FROM alumni_export
-WHERE months_since_ended BETWEEN 6 AND 12;
-
--- 1+ years (very long-term)
-SELECT * FROM alumni_export
-WHERE months_since_ended >= 12;
-```
-
----
-
 ## 📋 **Workflow with Kajabi**
 
 ### **Your Complete Process:**
@@ -283,7 +244,7 @@ WHERE months_since_ended < 3
 ORDER BY ended_date_formatted DESC;
 ```
 
-### **3. "Long-term Alumni"** (Soft Touch)**
+### **3. "Long-term Alumni" (Soft Touch)**
 ```sql
 -- Name: Alumni - Long-term (6-12mo)
 SELECT 
@@ -297,7 +258,7 @@ WHERE months_since_ended BETWEEN 6 AND 12
 ORDER BY ended_date_formatted DESC;
 ```
 
-### **4. "Incomplete Alumni"** (Understand Why)**
+### **4. "Incomplete Alumni" (Understand Why)**
 ```sql
 -- Name: Alumni - Incomplete (1-2 sessions only)
 SELECT 
@@ -384,42 +345,11 @@ ORDER BY sessions_completed DESC;
 
 In Supabase SQL Editor, run:
 
-```sql
--- Optional columns for tracking
-ALTER TABLE mentorships
-ADD COLUMN IF NOT EXISTS returned_after_end BOOLEAN DEFAULT false;
+**File:** `database/add_alumni_tracking.sql`
 
-ALTER TABLE mentorships
-ADD COLUMN IF NOT EXISTS admin_notes TEXT;
-
--- Create alumni export view
-CREATE OR REPLACE VIEW alumni_export AS
-SELECT 
-  mentees.email,
-  mentees.discord_id,
-  instructors.name AS instructor_name,
-  instructors.discord_id AS instructor_discord_id,
-  mentorships.total_sessions,
-  mentorships.sessions_remaining,
-  (mentorships.total_sessions - mentorships.sessions_remaining) AS sessions_completed,
-  mentorships.ended_at,
-  TO_CHAR(mentorships.ended_at, 'YYYY-MM-DD') AS ended_date_formatted,
-  ROUND(EXTRACT(EPOCH FROM (NOW() - mentorships.ended_at)) / 2592000) AS months_since_ended,
-  mentorships.end_reason,
-  mentorships.last_session_date,
-  TO_CHAR(mentorships.last_session_date, 'YYYY-MM-DD') AS last_session_formatted,
-  mentorships.returned_after_end,
-  mentorships.admin_notes,
-  mentorships.id AS mentorship_id,
-  mentees.id AS mentee_id,
-  instructors.id AS instructor_id,
-  mentorships.created_at AS mentorship_started_at
-FROM mentorships
-JOIN mentees ON mentorships.mentee_id = mentees.id
-JOIN instructors ON mentorships.instructor_id = instructors.id
-WHERE mentorships.status = 'ended'
-ORDER BY mentorships.ended_at DESC;
-```
+This creates:
+- Optional tracking columns (`returned_after_end`, `admin_notes`)
+- `alumni_export` view for easy CSV exports
 
 ---
 
@@ -506,150 +436,6 @@ Go to Supabase → `alumni_export` view → Export CSV!
 
 ---
 
-## 💾 **Saved Queries for Quick Access**
-
-Save these queries in Supabase for one-click access:
-
-### **Query 1: "Prime Candidates"**
-```sql
--- Alumni ready for re-engagement (3-6 months, engaged students)
-SELECT 
-  email,
-  instructor_name,
-  sessions_completed,
-  ended_date_formatted,
-  end_reason
-FROM alumni_export
-WHERE months_since_ended BETWEEN 3 AND 6
-  AND sessions_completed >= 3
-  AND COALESCE(returned_after_end, false) = false;
-```
-
-**Export this when:** Planning quarterly campaigns
-
----
-
-### **Query 2: "Never Returned"**
-```sql
--- Alumni who completed but never came back
-SELECT 
-  email,
-  instructor_name,
-  sessions_completed,
-  months_since_ended,
-  last_session_formatted
-FROM alumni_export
-WHERE sessions_completed = 4
-  AND COALESCE(returned_after_end, false) = false
-  AND months_since_ended >= 6;
-```
-
-**Export this when:** Targeting completed alumni for "round 2"
-
----
-
-### **Query 3: "By Instructor"**
-```sql
--- All alumni for specific instructor
-SELECT 
-  email,
-  sessions_completed,
-  ended_date_formatted,
-  end_reason
-FROM alumni_export
-WHERE instructor_name = 'Neil Gray'  -- Change name as needed
-ORDER BY ended_date_formatted DESC;
-```
-
-**Export this when:** Instructor wants their alumni list
-
----
-
-### **Query 4: "Recent Ends"**
-```sql
--- Students who ended in last 30 days
-SELECT 
-  email,
-  instructor_name,
-  end_reason,
-  ended_date_formatted
-FROM alumni_export
-WHERE ended_at >= NOW() - INTERVAL '30 days';
-```
-
-**Export this when:** Immediate follow-up on recent ends
-
----
-
-## 📈 **Analytics (View-Only, No Export Needed)**
-
-### **Overall Stats:**
-```sql
-SELECT 
-  COUNT(*) AS total_alumni,
-  COUNT(*) FILTER (WHERE returned_after_end = true) AS returned,
-  ROUND(100.0 * COUNT(*) FILTER (WHERE returned_after_end = true) / COUNT(*), 1) AS return_rate_percent,
-  ROUND(AVG(sessions_completed), 1) AS avg_sessions_completed,
-  COUNT(*) FILTER (WHERE sessions_completed = 4) AS completed_all_sessions
-FROM alumni_export;
-```
-
----
-
-### **By Instructor:**
-```sql
-SELECT 
-  instructor_name,
-  COUNT(*) AS total_alumni,
-  ROUND(AVG(sessions_completed), 1) AS avg_completion,
-  COUNT(*) FILTER (WHERE returned_after_end = true) AS returned,
-  ROUND(100.0 * COUNT(*) FILTER (WHERE returned_after_end = true) / COUNT(*), 1) AS return_rate
-FROM alumni_export
-GROUP BY instructor_name
-ORDER BY return_rate DESC NULLS LAST;
-```
-
----
-
-### **Time Distribution:**
-```sql
-SELECT 
-  CASE 
-    WHEN months_since_ended < 3 THEN '0-3 months'
-    WHEN months_since_ended < 6 THEN '3-6 months (PRIME)'
-    WHEN months_since_ended < 12 THEN '6-12 months'
-    ELSE '1+ years'
-  END AS time_range,
-  COUNT(*) AS count
-FROM alumni_export
-GROUP BY 
-  CASE 
-    WHEN months_since_ended < 3 THEN '0-3 months'
-    WHEN months_since_ended < 6 THEN '3-6 months (PRIME)'
-    WHEN months_since_ended < 12 THEN '6-12 months'
-    ELSE '1+ years'
-  END
-ORDER BY MIN(months_since_ended);
-```
-
----
-
-## 🎨 **Example CSV Output**
-
-What your exported file will look like:
-
-```csv
-email,instructor_name,sessions_completed,ended_date_formatted,months_since_ended,end_reason
-sarah@example.com,Neil Gray,4,2025-09-15,2,All sessions completed
-john@example.com,Rakasa,3,2025-08-20,3,Paused subscription
-emma@example.com,Neil Gray,4,2025-10-01,1,Completed mentorship
-mike@example.com,Ash Kirk,2,2025-07-10,4,Subscription cancelled
-```
-
-**Perfect for importing to Kajabi!**
-
----
-
 ## 📧 **Using CSV in Kajabi**
 
 ### **Import Alumni to Kajabi:**
@@ -689,7 +475,7 @@ When an alumni renews, your webhook already:
 
 **To also track returns:**
 
-Add one line to `src/server/webhookServer.ts` (line ~121):
+Add one line to `src/server/webhookServer.ts`:
 
 ```typescript
 returned_after_end: true  // Mark that they came back!
@@ -803,4 +589,3 @@ Compare campaigns:
 
 **Simple, powerful, and leverages tools you already have!** 🎉
 
-Ready to create the database migration file for this? 🚀

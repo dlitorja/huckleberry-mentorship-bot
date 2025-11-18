@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
 
     // Parse request body
     const body = await req.json();
-    const { callId } = body;
+    const { callId, recordingStarted } = body;
 
     if (!callId || typeof callId !== 'string') {
       return NextResponse.json(
@@ -98,14 +98,22 @@ export async function POST(req: NextRequest) {
     const endTime = new Date();
     const durationSeconds = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
 
+    // Prepare the update data
+    const updateData: any = {
+      end_time: endTime.toISOString(),
+      duration_seconds: durationSeconds,
+      status: 'ended',
+    };
+
+    // If recording was started but not finished, update recording status to 'failed'
+    if (recordingStarted) {
+      updateData.recording_status = 'failed';
+    }
+
     // Update video call record
     const { error: updateError } = await supabase
       .from('video_calls')
-      .update({
-        end_time: endTime.toISOString(),
-        duration_seconds: durationSeconds,
-        status: 'ended',
-      })
+      .update(updateData)
       .eq('id', callId);
 
     if (updateError) {

@@ -360,7 +360,7 @@ Testimonials section in web portal:
 
 **Time:** 2-3 days  
 **Effort:** Medium  
-**Value:** Fully automated system
+**Value:** Fully automated testimonial system
 
 ---
 

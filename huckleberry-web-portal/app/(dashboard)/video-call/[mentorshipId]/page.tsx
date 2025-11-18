@@ -20,6 +20,8 @@ export default function VideoCallPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [callId, setCallId] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isRecordingStarting, setIsRecordingStarting] = useState(false);
 
   // Fetch token and start call tracking
   useEffect(() => {
@@ -66,6 +68,65 @@ export default function VideoCallPage() {
     }
   }, [mentorshipId]);
 
+  const startRecording = async () => {
+    if (!callId || !tokenData) return;
+
+    setIsRecordingStarting(true);
+    try {
+      // API call to initiate cloud recording
+      const response = await fetch('/api/video-call/recordings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          callId,
+          recordingStatus: 'recording',
+          channelName: tokenData.channelName, // Pass the channel name for recording
+          uid: tokenData.userId, // Pass the user ID
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to start recording');
+      }
+
+      setIsRecording(true);
+      console.log('Recording started successfully');
+    } catch (err: any) {
+      console.error('Error starting recording:', err);
+      setError(err.message || 'Failed to start recording');
+    } finally {
+      setIsRecordingStarting(false);
+    }
+  };
+
+  const stopRecording = async () => {
+    if (!callId || !isRecording) return;
+
+    try {
+      // API call to update recording status to completed
+      const response = await fetch('/api/video-call/recordings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          callId,
+          recordingStatus: 'recorded',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to stop recording');
+      }
+
+      setIsRecording(false);
+      console.log('Recording stopped successfully');
+    } catch (err: any) {
+      console.error('Error stopping recording:', err);
+      setError(err.message || 'Failed to stop recording');
+    }
+  };
+
   const handleLeave = async () => {
     // End call tracking
     if (callId) {
@@ -73,7 +134,10 @@ export default function VideoCallPage() {
         await fetch('/api/video-call/end', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ callId }),
+          body: JSON.stringify({
+            callId,
+            recordingStarted: isRecording, // Mark that recording was in progress if leaving before stopping
+          }),
         });
       } catch (err) {
         console.error('Failed to end call tracking:', err);
@@ -123,6 +187,10 @@ export default function VideoCallPage() {
         userId={tokenData.userId}
         onLeave={handleLeave}
         onError={(err) => setError(err.message)}
+        onRecordingStart={startRecording}
+        onRecordingStop={stopRecording}
+        isRecording={isRecording}
+        isRecordingStarting={isRecordingStarting}
       />
     </div>
   );

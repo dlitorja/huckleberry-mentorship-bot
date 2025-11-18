@@ -211,7 +211,7 @@ Instructor: @AnotherInstructor
 /removestudent student:@BobSmith reason:"Refund processed manually" send_goodbye:false
 ```
 
-**Note:** For automatic removal on Kajabi cancellations/refunds, see [STUDENT_REMOVAL.md](STUDENT_REMOVAL.md)
+**Note:** For automatic removal on Kajabi cancellations/refunds, see [STUDENT_REMOVAL.md](./STUDENT_REMOVAL.md)
 
 ---
 
