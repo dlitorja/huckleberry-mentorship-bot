@@ -31,8 +31,8 @@ export async function GET(req: NextRequest) {
 
     // Get public URLs for all files
     const assets = (files || [])
-      .filter((file) => file.name) // Filter out folders
-      .map((file) => {
+      .filter((file: { name: string }) => file.name) // Filter out folders
+      .map((file: { name: string; metadata?: any; created_at?: string }) => {
         const { data: publicUrlData } = supabase.storage
           .from("landing-page-assets")
           .getPublicUrl(file.name);
@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
           id: assetId,
           url: publicUrlData.publicUrl,
           name: originalName,
-          size: (file.metadata as any)?.size || 0,
+          size: file.metadata?.size || 0,
           uploadedAt: file.created_at || new Date().toISOString(),
         };
       });

@@ -43,14 +43,14 @@ export async function GET(req: NextRequest) {
     }
     
     // Group mentorships by instructor
-    const instructorsWithMentees = instructors?.map((instructor) => ({
+    const instructorsWithMentees = instructors?.map((instructor: { id: string; name: string | null; discord_id: string | null }) => ({
       instructor: {
         id: instructor.id,
         name: instructor.name,
         discord_id: instructor.discord_id,
         discord_username: null, // Instructors table doesn't have discord_username
       },
-      mentorships: mentorships?.filter((m) => m.instructor_id === instructor.id) || [],
+      mentorships: mentorships?.filter((m: { instructor_id: string }) => m.instructor_id === instructor.id) || [],
     })) || [];
     
     return NextResponse.json({ instructors: instructorsWithMentees, isAdmin: true });

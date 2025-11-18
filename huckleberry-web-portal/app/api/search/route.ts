@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
         .eq("mentee_id", menteeData.id)
         .eq("status", "active");
 
-      mentorshipIds = mentorships?.map((m) => m.id) || [];
+      mentorshipIds = mentorships?.map((m: { id: string }) => m.id) || [];
     } else if (role === "instructor") {
       const { data: instructorData } = await supabase
         .from("instructors")
@@ -61,14 +61,14 @@ export async function GET(req: NextRequest) {
         .eq("instructor_id", instructorData.id)
         .eq("status", "active");
 
-      mentorshipIds = mentorships?.map((m) => m.id) || [];
+      mentorshipIds = mentorships?.map((m: { id: string }) => m.id) || [];
     } else if (role === "admin") {
       const { data: mentorships } = await supabase
         .from("mentorships")
         .select("id")
         .eq("status", "active");
 
-      mentorshipIds = mentorships?.map((m) => m.id) || [];
+      mentorshipIds = mentorships?.map((m: { id: string }) => m.id) || [];
     } else {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

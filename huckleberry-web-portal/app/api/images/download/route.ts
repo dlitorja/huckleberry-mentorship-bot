@@ -104,12 +104,12 @@ export async function GET(req: NextRequest) {
 
     const sessionMap = new Map<string, any>();
     if (sessions) {
-      sessions.forEach((s) => sessionMap.set(s.id, s));
+      sessions.forEach((s: { id: string }) => sessionMap.set(s.id, s));
     }
 
     // Group images by session
     const imagesBySession = new Map<string, typeof images>();
-    images.forEach((img) => {
+    images.forEach((img: { session_note_id: string | null }) => {
       const sessionId = img.session_note_id || "general";
       if (!imagesBySession.has(sessionId)) {
         imagesBySession.set(sessionId, []);

@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: mentorshipsError.message }, { status: 500 });
       }
       
-      mentorshipIds = mentorships?.map((m) => m.id) || [];
+      mentorshipIds = mentorships?.map((m: { id: string }) => m.id) || [];
     } else if (role === "instructor") {
       // Get instructor ID from discord_id
       const { data: instructorData, error: instructorError } = await supabase
@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: mentorshipsError.message }, { status: 500 });
       }
       
-      mentorshipIds = mentorships?.map((m) => m.id) || [];
+      mentorshipIds = mentorships?.map((m: { id: string }) => m.id) || [];
     } else if (role === "admin") {
       // Admins can see all active mentorships
       const { data: mentorships, error: mentorshipsError } = await supabase
@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: mentorshipsError.message }, { status: 500 });
       }
       
-      mentorshipIds = mentorships?.map((m) => m.id) || [];
+      mentorshipIds = mentorships?.map((m: { id: string }) => m.id) || [];
     } else {
       console.error("[Sessions API] Invalid role:", role);
       return NextResponse.json({ error: `Forbidden: Invalid role '${role}'` }, { status: 403 });
