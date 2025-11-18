@@ -7,10 +7,29 @@ export async function GET(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   
   const role = String((session as any).role || "unknown");
-  const discordId = String((session.user as any)?.id || "");
+  // Get discordId from session.user.discordId or session.discordId (fallback to user.id for backward compatibility)
+  const discordId = String(
+    (session.user as any)?.discordId || 
+    (session as any)?.discordId || 
+    (session.user as any)?.id || 
+    ""
+  );
+  
+  console.log('[Mentee Dashboard API] Session data:', {
+    role,
+    discordId,
+    userId: (session.user as any)?.id,
+    userDiscordId: (session.user as any)?.discordId,
+    sessionDiscordId: (session as any)?.discordId
+  });
   
   if (role !== "student") {
     return NextResponse.json({ error: "This endpoint is for students only" }, { status: 403 });
+  }
+  
+  if (!discordId) {
+    console.error('[Mentee Dashboard API] No Discord ID found in session');
+    return NextResponse.json({ error: "Discord ID not found in session" }, { status: 401 });
   }
   
   const supabase = getSupabaseClient(true);

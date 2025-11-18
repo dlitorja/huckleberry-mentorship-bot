@@ -29,7 +29,8 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }: { session: Session; token: JWT }) {
       if (session.user && token.discordId) {
-        (session.user as any).id = token.id;
+        // Set user.id to Discord ID (this is what API routes expect)
+        (session.user as any).id = token.discordId;
         (session.user as any).discordId = token.discordId;
         // Use role from token instead of re-fetching (already set in JWT callback)
         (session.user as any).role = token.role;

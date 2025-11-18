@@ -5,10 +5,19 @@ import { auth } from "@/auth";
 export async function GET(req: NextRequest) {
   try {
     const session = await auth();
-    if (!session || !(session.user as any)?.id) {
+    if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const discordId = String((session.user as any).id);
+    // Get discordId from session.user.discordId or session.discordId (fallback to user.id for backward compatibility)
+    const discordId = String(
+      (session.user as any)?.discordId || 
+      (session as any)?.discordId || 
+      (session.user as any)?.id || 
+      ""
+    );
+    if (!discordId) {
+      return NextResponse.json({ error: "Unauthorized: No Discord ID found" }, { status: 401 });
+    }
     const role = String((session as any).role || "unknown");
     
     console.log("[Sessions API] Request from role:", role, "discordId:", discordId);
@@ -135,10 +144,19 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = await auth();
-  if (!session || !(session.user as any)?.id) {
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const discordId = String((session.user as any).id);
+  // Get discordId from session.user.discordId or session.discordId (fallback to user.id for backward compatibility)
+  const discordId = String(
+    (session.user as any)?.discordId || 
+    (session as any)?.discordId || 
+    (session.user as any)?.id || 
+    ""
+  );
+  if (!discordId) {
+    return NextResponse.json({ error: "Unauthorized: No Discord ID found" }, { status: 401 });
+  }
   const role = String((session as any).role || "unknown");
   const supabase = getSupabaseClient(true);
 
