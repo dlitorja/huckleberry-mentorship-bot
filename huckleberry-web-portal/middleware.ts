@@ -1,10 +1,12 @@
-import { auth } from "@/auth";
+import { withAuth } from "next-auth/middleware";
 
-export default auth;
+export default withAuth({
+  callbacks: {
+    authorized: ({ token }) => !!token,
+  },
+});
 
 export const config = {
   matcher: ["/dashboard/:path*", "/sessions/:path*", "/instructor/:path*"]
 };
-
-export const runtime = "nodejs";
 

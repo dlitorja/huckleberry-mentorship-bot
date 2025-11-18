@@ -1,4 +1,5 @@
-import NextAuth from "next-auth";
+import NextAuth, { type NextAuthOptions } from "next-auth";
+import { getServerSession } from "next-auth/next";
 import DiscordProvider from "next-auth/providers/discord";
 import { getUserRoleByDiscordId } from "@/lib/auth";
 import { JWT } from "next-auth/jwt";
@@ -8,7 +9,7 @@ if (!process.env.DISCORD_CLIENT_ID || !process.env.DISCORD_CLIENT_SECRET) {
   throw new Error("Missing Discord client ID or secret");
 }
 
-const { handlers, auth, signIn, signOut } = NextAuth({
+export const authOptions: NextAuthOptions = {
   providers: [
     DiscordProvider({
       clientId: process.env.DISCORD_CLIENT_ID,
@@ -43,8 +44,9 @@ const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: "/login",
     error: "/login",
   },
-});
+};
 
-export { auth, signIn, signOut };
-export const GET = handlers.GET;
-export const POST = handlers.POST;
+// Export auth function for server-side usage (wrapper around getServerSession)
+export async function auth() {
+  return await getServerSession(authOptions);
+}
