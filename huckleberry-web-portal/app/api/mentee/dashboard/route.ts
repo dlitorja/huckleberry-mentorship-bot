@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/lib/supabase";
-import { getToken } from "next-auth/jwt";
+import { auth } from "@/auth";
 
 export async function GET(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-  if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   
-  const role = String(token?.role || "unknown");
-  const discordId = String(token?.discordId || "");
+  const role = String((session as any).role || "unknown");
+  const discordId = String((session.user as any)?.id || "");
   
   if (role !== "student") {
     return NextResponse.json({ error: "This endpoint is for students only" }, { status: 403 });
@@ -71,4 +71,3 @@ export async function GET(req: NextRequest) {
     }
   });
 }
-

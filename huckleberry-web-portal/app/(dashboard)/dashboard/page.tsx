@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/authOptions";
+import { auth } from "@/auth";
 import { cookies } from "next/headers";
 
 type MentorshipData = {
@@ -45,7 +44,7 @@ async function getMenteeMentorship(): Promise<MentorshipData | null> {
 }
 
 export default async function DashboardPage() {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   
   const role = String((session as any)?.role || "unknown");
   const isInstructorOrAdmin = role === "instructor" || role === "admin";

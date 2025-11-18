@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/lib/supabase";
-import { getToken } from "next-auth/jwt";
+import { auth } from "@/auth";
 import JSZip from "jszip";
 
 // GET /api/images/download?mentorshipId=xxx&sessionNoteId=xxx - Download images as ZIP
 export async function GET(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-  if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const role = String((token as any).role || "unknown");
-  const discordId = String((token as any).discordId || "");
+  const role = String((session as any).role || "unknown");
+  const discordId = String((session.user as any)?.id || "");
   const supabase = getSupabaseClient(true);
 
   const { searchParams } = new URL(req.url);

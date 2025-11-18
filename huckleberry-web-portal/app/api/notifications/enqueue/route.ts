@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/lib/redis";
 import { z } from "zod";
-import { getToken } from "next-auth/jwt";
+import { auth } from "@/auth";
 
 const EnqueueSchema = z.object({
   scheduled_session_id: z.string().uuid(),
@@ -13,8 +13,8 @@ const EnqueueSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-  if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => null);
   const parsed = EnqueueSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Invalid body" }, { status: 400 });

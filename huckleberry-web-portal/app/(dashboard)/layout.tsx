@@ -3,11 +3,10 @@ import type { ReactNode } from "react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SignOutButton } from "@/components/SignOutButton";
 import { SearchBar } from "@/components/SearchBar";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/authOptions";
+import { auth } from "@/auth";
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   
   const role = String((session as any)?.role || "unknown");
   const isInstructorOrAdmin = role === "instructor" || role === "admin";

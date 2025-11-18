@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/lib/supabase";
-import { getToken } from "next-auth/jwt";
+import { auth } from "@/auth";
 import { z } from "zod";
 
 const UpdateDisplayNameSchema = z.object({
@@ -9,11 +9,11 @@ const UpdateDisplayNameSchema = z.object({
 });
 
 export async function PATCH(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-  if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   
-  const role = String((token as any).role || "unknown");
-  const discordId = String((token as any).discordId || "");
+  const role = String((session as any).role || "unknown");
+  const discordId = String((session.user as any)?.id || "");
   
   if (role !== "instructor" && role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });

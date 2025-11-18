@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/lib/supabase";
-import { getToken } from "next-auth/jwt";
+import { auth } from "@/auth";
 
 // GET comments for an image
 export async function GET(
@@ -8,8 +8,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-    if (!token) {
+    const session = await auth();
+    if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -55,14 +55,14 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-    if (!token || !(token as any).discordId) {
+    const session = await auth();
+    if (!session || !(session.user as any)?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { id: imageId } = await params;
-    const discordId = String((token as any).discordId);
-    const role = String((token as any).role || "unknown");
+    const discordId = String((session.user as any).id);
+    const role = String((session as any).role || "unknown");
     const userType = role === "student" ? "student" : role === "instructor" ? "instructor" : "admin";
 
     const body = await req.json().catch(() => ({}));

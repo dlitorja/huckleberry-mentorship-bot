@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/lib/supabase";
-import { getToken } from "next-auth/jwt";
+import { auth } from "@/auth";
 
 export async function GET(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-  if (!token) {
+  const session = await auth();
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const role = String((token as any).role || "unknown");
+  const role = String((session as any).role || "unknown");
   if (role !== "admin") {
     return NextResponse.json({ error: "Forbidden - Admin only" }, { status: 403 });
   }
