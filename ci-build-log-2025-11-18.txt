@@ -1,0 +1,263 @@
+2025-11-18T00:58:40.2296300Z Current runner version: '2.329.0'
+2025-11-18T00:58:40.2318413Z ##[group]Runner Image Provisioner
+2025-11-18T00:58:40.2319505Z Hosted Compute Agent
+2025-11-18T00:58:40.2320056Z Version: 20251016.436
+2025-11-18T00:58:40.2320741Z Commit: 8ab8ac8bfd662a3739dab9fe09456aba92132568
+2025-11-18T00:58:40.2321447Z Build Date: 2025-10-15T20:44:12Z
+2025-11-18T00:58:40.2322012Z ##[endgroup]
+2025-11-18T00:58:40.2322628Z ##[group]Operating System
+2025-11-18T00:58:40.2323158Z Ubuntu
+2025-11-18T00:58:40.2323649Z 24.04.3
+2025-11-18T00:58:40.2324130Z LTS
+2025-11-18T00:58:40.2324637Z ##[endgroup]
+2025-11-18T00:58:40.2325147Z ##[group]Runner Image
+2025-11-18T00:58:40.2325743Z Image: ubuntu-24.04
+2025-11-18T00:58:40.2326291Z Version: 20251112.124.1
+2025-11-18T00:58:40.2327279Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20251112.124/images/ubuntu/Ubuntu2404-Readme.md
+2025-11-18T00:58:40.2329028Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20251112.124
+2025-11-18T00:58:40.2330057Z ##[endgroup]
+2025-11-18T00:58:40.2331205Z ##[group]GITHUB_TOKEN Permissions
+2025-11-18T00:58:40.2332995Z Contents: read
+2025-11-18T00:58:40.2333506Z Metadata: read
+2025-11-18T00:58:40.2334140Z Packages: read
+2025-11-18T00:58:40.2334628Z ##[endgroup]
+2025-11-18T00:58:40.2336596Z Secret source: Actions
+2025-11-18T00:58:40.2337375Z Prepare workflow directory
+2025-11-18T00:58:40.2661853Z Prepare all required actions
+2025-11-18T00:58:40.2700679Z Getting action download info
+2025-11-18T00:58:40.7264272Z Download action repository 'actions/checkout@v4' (SHA:08eba0b27e820071cde6df949e0beb9ba4906955)
+2025-11-18T00:58:40.8509710Z Download action repository 'actions/setup-node@v4' (SHA:49933ea5288caeca8642d1e84afbd3f7d6820020)
+2025-11-18T00:58:41.0189298Z Complete job name: Web Portal Build
+2025-11-18T00:58:41.0876965Z ##[group]Run actions/checkout@v4
+2025-11-18T00:58:41.0877841Z with:
+2025-11-18T00:58:41.0878331Z   repository: dlitorja/huckleberry-mentorship-bot
+2025-11-18T00:58:41.0879474Z   token: ***
+2025-11-18T00:58:41.0879918Z   ssh-strict: true
+2025-11-18T00:58:41.0880338Z   ssh-user: git
+2025-11-18T00:58:41.0880771Z   persist-credentials: true
+2025-11-18T00:58:41.0881244Z   clean: true
+2025-11-18T00:58:41.0881675Z   sparse-checkout-cone-mode: true
+2025-11-18T00:58:41.0882181Z   fetch-depth: 1
+2025-11-18T00:58:41.0882591Z   fetch-tags: false
+2025-11-18T00:58:41.0883021Z   show-progress: true
+2025-11-18T00:58:41.0883462Z   lfs: false
+2025-11-18T00:58:41.0883858Z   submodules: false
+2025-11-18T00:58:41.0884287Z   set-safe-directory: true
+2025-11-18T00:58:41.0885070Z ##[endgroup]
+2025-11-18T00:58:41.1935347Z Syncing repository: dlitorja/huckleberry-mentorship-bot
+2025-11-18T00:58:41.1937228Z ##[group]Getting Git version info
+2025-11-18T00:58:41.1938309Z Working directory is '/home/runner/work/huckleberry-mentorship-bot/huckleberry-mentorship-bot'
+2025-11-18T00:58:41.1939966Z [command]/usr/bin/git version
+2025-11-18T00:58:41.2023695Z git version 2.51.2
+2025-11-18T00:58:41.2050059Z ##[endgroup]
+2025-11-18T00:58:41.2064410Z Temporarily overriding HOME='/home/runner/work/_temp/e43e6d42-6e7b-4368-9b8f-1566170b07ec' before making global git config changes
+2025-11-18T00:58:41.2067392Z Adding repository directory to the temporary git global config as a safe directory
+2025-11-18T00:58:41.2080165Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/huckleberry-mentorship-bot/huckleberry-mentorship-bot
+2025-11-18T00:58:41.2117009Z Deleting the contents of '/home/runner/work/huckleberry-mentorship-bot/huckleberry-mentorship-bot'
+2025-11-18T00:58:41.2120218Z ##[group]Initializing the repository
+2025-11-18T00:58:41.2124884Z [command]/usr/bin/git init /home/runner/work/huckleberry-mentorship-bot/huckleberry-mentorship-bot
+2025-11-18T00:58:41.2245535Z hint: Using 'master' as the name for the initial branch. This default branch name
+2025-11-18T00:58:41.2246572Z hint: is subject to change. To configure the initial branch name to use in all
+2025-11-18T00:58:41.2247467Z hint: of your new repositories, which suppress this warning, call:
+2025-11-18T00:58:41.2248592Z hint:
+2025-11-18T00:58:41.2249239Z hint: 	git config --global init.defaultBranch <name>
+2025-11-18T00:58:41.2249976Z hint:
+2025-11-18T00:58:41.2250671Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2025-11-18T00:58:41.2252176Z hint: 'development'. The just-created branch can be renamed immediately after this
+2025-11-18T00:58:41.2252900Z hint: initial commit using:
+2025-11-18T00:58:41.2253600Z hint:
+2025-11-18T00:58:41.2254250Z hint: 	git branch -m <name>
+2025-11-18T00:58:41.2254900Z hint:
+2025-11-18T00:58:41.2255540Z hint: If you want to change the default branch name globally, you can do so by running:
+2025-11-18T00:58:41.2256190Z hint:
+2025-11-18T00:58:41.2256840Z hint: 2.43.0 or later, you can set the name of the default branch using the
+2025-11-18T00:58:41.2257490Z hint: 'init.defaultBranch' configuration variable. For example:
+2025-11-18T00:58:41.2258140Z hint:
+2025-11-18T00:58:41.2258790Z hint: 	git config --global init.defaultBranch main
+2025-11-18T00:58:41.2259440Z hint:
+2025-18T00:58:41.2260090Z hint: In addition to the configuration variable mentioned above, you can also set the
+2025-11-18T00:58:41.2260740Z hint: name of the default branch at the time of repository creation. For more
+2025-11-18T00:58:41.2261390Z hint: information, see:
+2025-11-18T00:58:41.2262040Z hint:
+2025-11-18T00:58:41.2262690Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2263340Z hint:
+2025-11-18T00:58:41.2263990Z hint: In a future version of Git, the default branch name will change from 'master'
+2025-11-18T00:58:41.2264640Z hint: to 'main'. For more information, see:
+2025-11-18T00:58:41.2265290Z hint:
+2025-11-18T00:58:41.2265940Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2266590Z hint:
+2025-11-18T00:58:41.2267240Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2267890Z hint:
+2025-11-18T00:58:41.2268540Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2269190Z hint:
+2025-11-18T00:58:41.2269840Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2270490Z hint:
+2025-11-18T00:58:41.2271140Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2271790Z hint:
+2025-11-18T00:58:41.2272440Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2273090Z hint:
+2025-11-18T00:58:41.2273740Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2274390Z hint:
+2025-11-18T00:58:41.2275040Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2275690Z hint:
+2025-11-18T00:58:41.2276340Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2276990Z hint:
+2025-11-18T00:58:41.2277640Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2278290Z hint:
+2025-11-18T00:58:41.2278940Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2279590Z hint:
+2025-11-18T00:58:41.2280240Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2280890Z hint:
+2025-11-18T00:58:41.2281540Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2282190Z hint:
+2025-11-18T00:58:41.2282840Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2283490Z hint:
+2025-11-18T00:58:41.2284140Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2284790Z hint:
+2025-11-18T00:58:41.2285440Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2286090Z hint:
+2025-11-18T00:58:41.2286740Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2287390Z hint:
+2025-11-18T00:58:41.2288040Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2288690Z hint:
+2025-11-18T00:58:41.2289340Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2289990Z hint:
+2025-11-18T00:58:41.2290640Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2291290Z hint:
+2025-11-18T00:58:41.2291940Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2292590Z hint:
+2025-11-18T00:58:41.2293240Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2293890Z hint:
+2025-11-18T00:58:41.2294540Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2295190Z hint:
+2025-11-18T00:58:41.2295840Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2296490Z hint:
+2025-11-18T00:58:41.2297140Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2297790Z hint:
+2025-11-18T00:58:41.2298440Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2299090Z hint:
+2025-11-18T00:58:41.2299740Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2300390Z hint:
+2025-11-18T00:58:41.2301040Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2301690Z hint:
+2025-11-18T00:58:41.2302340Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2302990Z hint:
+2025-11-18T00:58:41.2303640Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2304290Z hint:
+2025-11-18T00:58:41.2304940Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2305590Z hint:
+2025-11-18T00:58:41.2306240Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2306890Z hint:
+2025-11-18T00:58:41.2307540Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2308190Z hint:
+2025-11-18T00:58:41.2308840Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2309490Z hint:
+2025-11-18T00:58:41.2310140Z hint:
+2025-11-18T00:58:41.2310790Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2311440Z hint:
+2025-11-18T00:58:41.2312090Z hint: 	https://git-scm.com/docs/git-init#_template_path
+2025-11-18T00:58:41.2312740Z hint:
+2025-11-18T00:58:41.2313390Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2314040Z hint:
+2025-11-18T00:58:41.2314690Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2315340Z hint:
+2025-11-18T00:58:41.2315990Z hint:  stateless protocol
+2025-11-18T00:58:41.2316640Z hint:
+2025-11-18T00:58:41.2317290Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2317940Z hint:
+2025-11-18T00:58:41.2318590Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2319240Z hint:
+2025-11-18T00:58:41.2319890Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2320540Z hint:
+2025-11-18T00:58:41.2321190Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2321840Z hint:
+2025-11-18T00:58:41.2322490Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2323140Z hint:
+2025-11-18T00:58:41.2323790Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2324440Z hint:
+2025-11-18T00:58:41.2325090Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2325740Z hint:
+2025-11-18T00:58:41.2326390Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2327040Z hint:
+2025-11-18T00:58:41.2327690Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2328340Z hint:
+2025-11-18T00:58:41.2328990Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2329640Z hint:
+2025-11-18T00:58:41.2330290Z hint:
+2025-11-18T00:58:41.2330940Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2331590Z hint:
+2025-11-18T00:58:41.2332240Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2332890Z hint:
+2025-11-18T00:58:41.2333540Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2334190Z hint:
+2025-11-18T00:58:41.2334840Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2335490Z hint:
+2025-11-18T00:58:41.2336140Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2336790Z hint:
+2025-11-18T00:58:41.2337440Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2338090Z hint:
+2025-11-18T00:58:41.2338740Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2339390Z hint:
+2025-11-18T00:58:41.2340040Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2340690Z hint:
+2025-11-18T00:58:41.2341340Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2341990Z hint:
+2025-11-18T00:58:41.2342640Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2343290Z hint:
+2025-11-18T00:58:41.2343940Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+20255-11-18T00:58:41.2344590Z hint:
+2025-11-18T00:58:41.2345240Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2345890Z hint:
+2025-11-18T00:58:41.2346540Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2347190Z hint:
+2025-11-18T00:58:41.2347840Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2348490Z hint:
+2025-11-18T00:58:41.2349140Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2349790Z hint:
+2025-11-18T00:58:41.2350440Z hint:
+2025-11-18T00:58:41.2351090Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2351740Z hint:
+2025-11-18T00:58:41.2352390Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2353040Z hint:
+2025-11-18T00:58:41.2353690Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2354340Z hint:
+2025-11-18T00:58:41.2354990Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2355640Z hint:
+2025-11-18T00:58:41.2356290Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2356940Z hint:
+2025-11-18T00:58:41.2357590Z hint: 	https://git-scm.com/docs/git-init#_template_directory
+2025-11-18T00:58:41.2358240Z hint:
+202.js build process continues...
+2025-11-18T00:59:12.3686790Z  ✓ Compiled successfully in 13.3s
+2025-11-18T00:59:12.3729818Z    Linting and checking validity of types ...
+2025-11-18T00:59:15.1073109Z 
+2025-11-18T00:59:15.1081762Z ./app/(dashboard)/search/page.tsx
+2025-11-18T00:59:15.1103675Z 71:6  Warning: React Hook useEffect has a missing dependency: 'tags'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+2025-11-18T00:59:15.1105808Z 71:32  Warning: React Hook useEffect has a complex expression in the dependency array. Extract it to a separate variable so it can be statically checked.  react-hooks/exhaustive-deps
+2025-11-18T00:59:15.1106860Z 
+2025-11-18T00:59:15.1107066Z ./components/ImageGallery.tsx
+2025-11-18T00:59:15.1108461Z 295:6  Warning: React Hook useEffect has a missing dependency: 'loadComments'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+2025-11-18T00:59:15.1109725Z 
+2025-11-18T00:59:15.1109995Z ./components/ui/timezone-selector.tsx
+2025-11-18T00:59:15.1112262Z 81:6  Warning: React Hook useEffect has missing dependencies: 'onChange' and 'value'. Either include them or remove the dependency array. If 'onChange' changes too often, find the parent component that defines it and wrap that definition in useCallback.  react-hooks/exhaustive-deps
+2025-11-18T00:59:15.1113860Z 
+2025-11-18T00:59:15.1114064Z ./lib/compose-refs.ts
+2025-11-18T00:59:15.1115376Z 63:10  Warning: React Hook useCallback received a function whose dependencies are unknown. Pass an inline function instead.  react-hooks/exhaustive-deps
+2025-11-18T00:59:15.1116323Z 
+2025-11-18T00:59:15.1117316Z info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/app/api-reference/config/eslint#disabling-rules
+2025-11-18T00:59:18.6183521Z    Collecting page data ...
+2025-11-18T00:59:19.0755722Z Error: Missing Discord client ID or secret
+2025-11-18T00:59:19.0760702Z     at 29176 (.next/server/app/api/assets/[id]/route.js:1:1564)
+2025-11-18T00:59:19.0771956Z     at c (.next/server/webpack-runtime.js:1:128)
+2025-11-18T00:59:19.0780845Z     at 37076 (.next/server/app/api/assets/[id]/route.js:1:2664)
+2025-11-18T00:59:19.0785158Z     at c (.next/server/webpack-runtime.js:1:128)
+2025-11-18T00:59:19.0839746Z     at <unknown> (.next/server/app/api/assets/[id]/route.js:1:9630)
+2025-11-18T00:59:19.0840811Z     at <unknown> (.next/server/app/api/assets/[id]/route.js:1:9602)
+2025-11-18T00:59:19.0842953Z     at Object.<anonymous> (.next/server/app/api/assets/[id]/route.js:1:9662)
+2025-11-18T00:59:19.0843746Z 
+2025-11-18T00:59:19.0847778Z > Build error occurred
+2025-11-18T00:59:19.0903722Z [Error: Failed to collect page data for /api/assets/[id]] {
+2025-11-18T00:59:19.0909098Z   type: 'Error'
+2025-11-18T00:59:19.0913386Z }
+2025-11-18T00:59:19.1236677Z ##[error]Process completed with exit code 1.
+
