@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
+import type { Session } from "next-auth";
 import Link from "next/link";
 import { ImageUploader } from "@/components/ImageUploader";
 import { ImageGallery } from "@/components/ImageGallery";
@@ -8,7 +9,7 @@ import { RichTextEditor } from "@/components/RichTextEditor";
 import { Plus, FileText, Filter, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type Session = { id: string; mentorship_id: string; notes: string | null; session_date: string | null; created_at: string };
+type SessionNote = { id: string; mentorship_id: string; notes: string | null; session_date: string | null; created_at: string };
 type MentorshipData = {
   id: string;
   sessions_remaining: number | null;
@@ -31,7 +32,7 @@ type ImageItem = {
 
 export default function SessionsListPage() {
   const { data: authSession } = useSession();
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const [sessions, setSessions] = useState<SessionNote[]>([]);
   const [mentorship, setMentorship] = useState<MentorshipData | null>(null);
   const [images, setImages] = useState<ImageItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,7 +44,7 @@ export default function SessionsListPage() {
   const [dateTo, setDateTo] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   
-  const userRole = authSession?.role || "unknown";
+  const userRole = (authSession as Session & { role?: string } | null)?.role || "unknown";
   const isAdmin = userRole === "admin";
   
   // Count general images (not tied to a specific session) - kept for future use
